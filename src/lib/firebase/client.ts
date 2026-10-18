@@ -9,9 +9,21 @@ export interface FirebaseClientConfig {
   storageBucket?: string;
   messagingSenderId?: string;
   appId: string;
+  measurementId?: string;
 }
 
-export function getSavedFirebaseConfig(): FirebaseClientConfig | null {
+// User's official infinitycloud-da745 project configuration
+export const defaultFirebaseConfig: FirebaseClientConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyCoBSB-DYzhNJWuPltE8A7SKsMRHvZcV2c",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "infinitycloud-da745.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "infinitycloud-da745",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "infinitycloud-da745.firebasestorage.app",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "787257854886",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:787257854886:web:af878c079f82994c765d67",
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-8C1JKT9WVN"
+};
+
+export function getSavedFirebaseConfig(): FirebaseClientConfig {
   if (typeof window !== 'undefined') {
     const raw = localStorage.getItem('infinity_custom_firebase_config');
     if (raw) {
@@ -21,34 +33,14 @@ export function getSavedFirebaseConfig(): FirebaseClientConfig | null {
       } catch (e) {}
     }
   }
-
-  const envKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
-  const envProject = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-
-  if (envKey && envProject && envKey !== 'demo-api-key' && envKey !== '') {
-    return {
-      apiKey: envKey,
-      authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || `${envProject}.firebaseapp.com`,
-      projectId: envProject,
-      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-      appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || ''
-    };
-  }
-
-  return null;
+  return defaultFirebaseConfig;
 }
 
-export const isFirebaseConfigured: boolean = Boolean(
-  (process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
-    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID &&
-    process.env.NEXT_PUBLIC_FIREBASE_API_KEY !== 'demo-api-key' &&
-    process.env.NEXT_PUBLIC_FIREBASE_API_KEY !== '') ||
-  (typeof window !== 'undefined' && localStorage.getItem('infinity_custom_firebase_config'))
-);
+export const isFirebaseConfigured: boolean = true;
 
 export function checkFirebaseConfigured(): boolean {
-  return getSavedFirebaseConfig() !== null;
+  const cfg = getSavedFirebaseConfig();
+  return Boolean(cfg.apiKey && cfg.projectId && cfg.apiKey.startsWith('AIzaSy'));
 }
 
 export function saveFirebaseConfig(config: FirebaseClientConfig) {
@@ -58,14 +50,7 @@ export function saveFirebaseConfig(config: FirebaseClientConfig) {
   }
 }
 
-const currentConfig = getSavedFirebaseConfig() || {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'demo-api-key',
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || 'infinity-demo.firebaseapp.com',
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'infinity-demo',
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'infinity-demo.appspot.com',
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '1234567890',
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '1:1234567890:web:abcdef'
-};
+const currentConfig = getSavedFirebaseConfig();
 
 const app: FirebaseApp = !getApps().length ? initializeApp(currentConfig) : getApp();
 const auth: Auth = getAuth(app);

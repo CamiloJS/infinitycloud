@@ -11,6 +11,9 @@ import { db, isFirebaseConfigured } from './client';
 import { InfinityItem, InfinityCollection } from '@/types';
 import { ExportData, ExportDataSchema } from '../validation/schemas';
 
+const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+const isFirestoreActive = isFirebaseConfigured && !isTestEnv;
+
 // Helper for local storage simulation when Firebase credentials aren't active
 function getLocalKey(userId: string, type: string) {
   return `infinity_${userId}_${type}`;
@@ -36,7 +39,7 @@ function setLocalData<T>(userId: string, type: string, data: T[]) {
 }
 
 export async function fetchUserItems(userId: string): Promise<InfinityItem[]> {
-  if (!isFirebaseConfigured) {
+  if (!isFirestoreActive) {
     return getLocalData<InfinityItem>(userId, 'items');
   }
 
@@ -53,7 +56,7 @@ export async function fetchUserItems(userId: string): Promise<InfinityItem[]> {
 export async function saveItem(userId: string, item: InfinityItem): Promise<void> {
   const itemToSave = { ...item, userId, updatedAt: Date.now() };
 
-  if (!isFirebaseConfigured) {
+  if (!isFirestoreActive) {
     const items = getLocalData<InfinityItem>(userId, 'items');
     const existingIndex = items.findIndex(i => i.id === item.id);
     if (existingIndex >= 0) {
@@ -85,7 +88,7 @@ export async function updateItem(
 ): Promise<void> {
   const mergedUpdates = { ...updates, updatedAt: Date.now() };
 
-  if (!isFirebaseConfigured) {
+  if (!isFirestoreActive) {
     const items = getLocalData<InfinityItem>(userId, 'items');
     const idx = items.findIndex(i => i.id === itemId);
     if (idx >= 0) {
@@ -125,7 +128,7 @@ export async function restoreItemFromTrash(userId: string, itemId: string): Prom
 }
 
 export async function permanentlyDeleteItem(userId: string, itemId: string): Promise<void> {
-  if (!isFirebaseConfigured) {
+  if (!isFirestoreActive) {
     const items = getLocalData<InfinityItem>(userId, 'items');
     const filtered = items.filter(i => i.id !== itemId);
     setLocalData(userId, 'items', filtered);
@@ -153,7 +156,7 @@ export async function emptyTrash(userId: string): Promise<void> {
 
 // Collections
 export async function fetchUserCollections(userId: string): Promise<InfinityCollection[]> {
-  if (!isFirebaseConfigured) {
+  if (!isFirestoreActive) {
     return getLocalData<InfinityCollection>(userId, 'collections');
   }
 
@@ -170,7 +173,7 @@ export async function fetchUserCollections(userId: string): Promise<InfinityColl
 export async function saveCollection(userId: string, coll: InfinityCollection): Promise<void> {
   const toSave = { ...coll, userId, updatedAt: Date.now() };
 
-  if (!isFirebaseConfigured) {
+  if (!isFirestoreActive) {
     const list = getLocalData<InfinityCollection>(userId, 'collections');
     const idx = list.findIndex(c => c.id === coll.id);
     if (idx >= 0) list[idx] = toSave;
@@ -205,7 +208,7 @@ export async function deleteCollectionSafely(userId: string, collectionId: strin
   }
 
   // 2. Delete collection document
-  if (!isFirebaseConfigured) {
+  if (!isFirestoreActive) {
     const list = getLocalData<InfinityCollection>(userId, 'collections');
     setLocalData(userId, 'collections', list.filter(c => c.id !== collectionId));
     return;
@@ -222,7 +225,7 @@ export async function deleteCollectionSafely(userId: string, collectionId: strin
 
 // User Settings (TOTP, Notion token, etc.)
 export async function getUserSettings(userId: string): Promise<Record<string, any>> {
-  if (!isFirebaseConfigured) {
+  if (!isFirestoreActive) {
     if (typeof localStorage === 'undefined') return {};
     try {
       const data = localStorage.getItem(`infinity_${userId}_settings`);
@@ -242,7 +245,7 @@ export async function getUserSettings(userId: string): Promise<Record<string, an
 }
 
 export async function saveUserSettings(userId: string, settings: Record<string, any>): Promise<void> {
-  if (!isFirebaseConfigured) {
+  if (!isFirestoreActive) {
     if (typeof localStorage === 'undefined') return;
     try {
       const current = await getUserSettings(userId);
