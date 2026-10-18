@@ -1,20 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from '@notionhq/client';
 import { decryptSecret } from '@/lib/crypto/encryption';
-import { getUserSettings } from '@/lib/firebase/firestore';
+import { requireServerAuth } from '@/lib/auth/session';
+import { getServerUserSettings } from '@/lib/server/store';
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId, query = '' } = await req.json();
-
-    if (!userId) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    const authCheck = requireServerAuth(req);
+    if (!authCheck.authorized) {
+      return authCheck.response;
     }
 
-    const settings = await getUserSettings(userId);
+    const { session } = authCheck;
+    const userId = session.userId;
+
+    const body = await req.json().catch(() => ({}));
+    const query = typeof body.query === 'string' ? body.query : '';
+
+    const settings = await getServerUserSettings(userId);
     if (!settings.notionTokenEncrypted) {
       return NextResponse.json(
-        { error: 'No has conectado tu integración de Notion aún.' },
+        { error: 'No has conectado tu integración de Notion aún. Ingresa tu Internal Integration Token.' },
         { status: 400 }
       );
     }

@@ -1,8 +1,19 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { InfinityItem } from '@/types';
-import { X, ExternalLink, Download, FileText, AlertCircle, Check, Copy } from 'lucide-react';
+import { adapterRegistry } from '@/lib/adapters/registry';
+import { 
+  X, 
+  ExternalLink, 
+  Download, 
+  FileText, 
+  AlertCircle, 
+  Check, 
+  Copy, 
+  Maximize2, 
+  Minimize2 
+} from 'lucide-react';
 
 interface DocumentViewerProps {
   item: InfinityItem | null;
@@ -14,6 +25,17 @@ export function DocumentViewer({ item, onClose }: DocumentViewerProps) {
   const [parsedCsv, setParsedCsv] = useState<string[][] | null>(null);
   const [loadingText, setLoadingText] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   useEffect(() => {
     setTextContent(null);
@@ -22,6 +44,7 @@ export function DocumentViewer({ item, onClose }: DocumentViewerProps) {
 
     if (!item) return;
 
+    const directUrl = adapterRegistry.getDirectUrl(item);
     const urlLower = item.url.toLowerCase();
     const isTextual = (
       urlLower.endsWith('.txt') ||
@@ -32,15 +55,14 @@ export function DocumentViewer({ item, onClose }: DocumentViewerProps) {
 
     if (isTextual) {
       setLoadingText(true);
-      fetch(item.url)
+      fetch(directUrl)
         .then(res => res.text())
         .then(text => {
           setTextContent(text);
           if (urlLower.endsWith('.csv')) {
-            // Simple robust CSV parser
+            // Robust CSV parser
             const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
             const rows = lines.map(line => {
-              // Match commas ignoring quotes
               const row: string[] = [];
               let insideQuote = false;
               let currentVal = '';
@@ -72,13 +94,38 @@ export function DocumentViewer({ item, onClose }: DocumentViewerProps) {
   useEffect(() => {
     if (!item) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        } else {
+          onClose();
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [item, onClose]);
 
   if (!item) return null;
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        if (containerRef.current?.requestFullscreen) {
+          await containerRef.current.requestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('Fullscreen error:', err);
+    }
+  };
+
+  const directUrl = adapterRegistry.getDirectUrl(item);
+  const driveEmbedUrl = adapterRegistry.getEmbedUrl(item) || item.url.replace(/\/edit(\?.*)?$/, '/preview').replace(/\/view(\?.*)?$/, '/preview');
 
   const urlLower = item.url.toLowerCase();
   const isPdf = urlLower.endsWith('.pdf') || item.mimeType === 'application/pdf';
@@ -101,7 +148,10 @@ export function DocumentViewer({ item, onClose }: DocumentViewerProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+    <div 
+      ref={containerRef}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200"
+    >
       <div className="relative w-full max-w-5xl h-[85vh] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
@@ -124,8 +174,16 @@ export function DocumentViewer({ item, onClose }: DocumentViewerProps) {
               </button>
             )}
 
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+            >
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+
             <a
-              href={item.url}
+              href={directUrl}
               download={item.name}
               target="_blank"
               rel="noopener noreferrer"
@@ -159,13 +217,13 @@ export function DocumentViewer({ item, onClose }: DocumentViewerProps) {
         <div className="flex-1 bg-slate-100 dark:bg-slate-950 overflow-hidden relative">
           {isPdf ? (
             <iframe
-              src={item.url}
+              src={directUrl}
               title={item.name}
               className="w-full h-full border-0"
             />
           ) : isDriveDoc ? (
             <iframe
-              src={item.url.replace(/\/view(\?.*)?$/, '/preview')}
+              src={driveEmbedUrl}
               title={item.name}
               className="w-full h-full border-0"
               allowFullScreen
@@ -179,7 +237,7 @@ export function DocumentViewer({ item, onClose }: DocumentViewerProps) {
                 </span>
               </div>
               <iframe
-                src={`https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(item.url)}`}
+                src={`https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(directUrl)}`}
                 title={item.name}
                 className="w-full flex-1 border-0"
               />
@@ -237,7 +295,7 @@ export function DocumentViewer({ item, onClose }: DocumentViewerProps) {
                   Abrir enlace original
                 </a>
                 <a
-                  href={item.url}
+                  href={directUrl}
                   download={item.name}
                   className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-white text-sm font-medium hover:opacity-90 transition-opacity"
                 >

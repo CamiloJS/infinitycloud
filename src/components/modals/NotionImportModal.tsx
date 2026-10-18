@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useItems } from '@/context/ItemsContext';
+import { saveItem } from '@/lib/firebase/firestore';
 import { 
   X, 
   Sparkles, 
@@ -135,6 +136,16 @@ export function NotionImportModal({ isOpen, onClose }: NotionImportModalProps) {
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Error durante la importación');
+      }
+
+      if (data.items && Array.isArray(data.items)) {
+        for (const item of data.items) {
+          try {
+            await saveItem(user.uid, item);
+          } catch (saveErr) {
+            console.warn('Item save error in modal:', saveErr);
+          }
+        }
       }
 
       setImportResult({

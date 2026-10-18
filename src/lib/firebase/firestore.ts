@@ -182,7 +182,7 @@ export async function saveCollection(userId: string, coll: InfinityCollection): 
   try {
     const docRef = doc(db, 'users', userId, 'collections', coll.id);
     await setDoc(docRef, toSave, { merge: true });
-  } catch (error) {
+  } catch {
     const list = getLocalData<InfinityCollection>(userId, 'collections');
     const idx = list.findIndex(c => c.id === coll.id);
     if (idx >= 0) list[idx] = toSave;
@@ -214,7 +214,7 @@ export async function deleteCollectionSafely(userId: string, collectionId: strin
   try {
     const docRef = doc(db, 'users', userId, 'collections', collectionId);
     await deleteDoc(docRef);
-  } catch (error) {
+  } catch {
     const list = getLocalData<InfinityCollection>(userId, 'collections');
     setLocalData(userId, 'collections', list.filter(c => c.id !== collectionId));
   }

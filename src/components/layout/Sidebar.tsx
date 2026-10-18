@@ -259,7 +259,12 @@ export function Sidebar({
                           <button
                             onClick={() => {
                               setActiveMenuCollId(null);
-                              deleteCollection(coll.id);
+                              const confirmed = window.confirm(
+                                `¿Deseas eliminar la colección "${coll.name}"?\n\nLos archivos contenidos se conservarán intactos en tu biblioteca principal (sin carpeta) para evitar pérdidas accidentales.`
+                              );
+                              if (confirmed) {
+                                deleteCollection(coll.id);
+                              }
                             }}
                             className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600"
                           >

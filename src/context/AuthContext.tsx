@@ -35,8 +35,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [pendingUser, setPendingUser] = useState<UserProfile | null>(null);
 
   // Load user profile & 2FA status
-  const loadProfile = async (rawUser: { uid: string; email?: string | null; displayName?: string | null; photoURL?: string | null }) => {
+  const loadProfile = async (
+    rawUser: { uid: string; email?: string | null; displayName?: string | null; photoURL?: string | null },
+    idToken?: string,
+    demoNum?: 1 | 2
+  ) => {
     try {
+      // Sync verified server session cookie
+      try {
+        await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idToken,
+            demoUserNum: demoNum,
+            uid: rawUser.uid,
+            email: rawUser.email
+          })
+        });
+      } catch (sessionErr) {
+        console.warn('Session sync warning:', sessionErr);
+      }
+
       const settings = await getUserSettings(rawUser.uid);
       const is2fa = Boolean(settings.twoFactorEnabled);
 
@@ -117,12 +137,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       const res = await signInWithPopup(auth, googleProvider);
+      const idToken = await res.user.getIdToken();
       await loadProfile({
         uid: res.user.uid,
         email: res.user.email,
         displayName: res.user.displayName,
         photoURL: res.user.photoURL
-      });
+      }, idToken);
     } catch (error: any) {
       console.error('Google sign in error:', error);
       setLoading(false);
@@ -145,7 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     sessionStorage.setItem('infinity_demo_user', JSON.stringify(demoProfile));
-    await loadProfile(demoProfile);
+    await loadProfile(demoProfile, undefined, userNum);
   };
 
   const signInWithEmail = async (email: string, pass: string) => {
@@ -155,12 +176,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     const res = await signInWithEmailAndPassword(auth, email, pass);
+    const idToken = await res.user.getIdToken();
     await loadProfile({
       uid: res.user.uid,
       email: res.user.email,
       displayName: res.user.displayName,
       photoURL: res.user.photoURL
-    });
+    }, idToken);
   };
 
   const signUpWithEmail = async (email: string, pass: string) => {
@@ -170,12 +192,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     const res = await createUserWithEmailAndPassword(auth, email, pass);
+    const idToken = await res.user.getIdToken();
     await loadProfile({
       uid: res.user.uid,
       email: res.user.email,
       displayName: res.user.displayName,
       photoURL: res.user.photoURL
-    });
+    }, idToken);
   };
 
   const verifyTwoFactorChallenge = async (code: string, isBackup: boolean): Promise<boolean> => {
@@ -207,6 +230,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     setLoading(true);
     sessionStorage.removeItem('infinity_demo_user');
+    try {
+      await fetch('/api/auth/session', { method: 'DELETE' });
+    } catch (e) {
+      console.warn('Session delete error:', e);
+    }
     if (isFirebaseConfigured) {
       await fbSignOut(auth);
     }

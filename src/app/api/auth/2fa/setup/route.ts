@@ -1,15 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateTotpSetup } from '@/lib/auth/totp';
+import { encryptSecret } from '@/lib/crypto/encryption';
+import { requireServerAuth } from '@/lib/auth/session';
+import { saveServerUserSettings } from '@/lib/server/store';
 
 export async function POST(req: NextRequest) {
   try {
-    const { email } = await req.json();
-
-    if (!email) {
-      return NextResponse.json({ error: 'Correo requerido para configurar 2FA' }, { status: 400 });
+    const authCheck = requireServerAuth(req, { allow2FaPending: true });
+    if (!authCheck.authorized) {
+      return authCheck.response;
     }
 
-    const setup = await generateTotpSetup(email);
+    const { session } = authCheck;
+    const userEmail = session.email || 'user@infinity.dev';
+
+    const setup = await generateTotpSetup(userEmail);
+
+    // Save pending setup on server side so client cannot tamper with secret
+    await saveServerUserSettings(session.userId, {
+      twoFactorPendingSecretEncrypted: encryptSecret(setup.secret),
+      twoFactorPendingBackupCodes: setup.hashedBackupCodes,
+      twoFactorPendingCreatedAt: Date.now()
+    });
 
     return NextResponse.json({
       secret: setup.secret,

@@ -31,7 +31,7 @@ export function ImportExportModal({ isOpen, onClose }: ImportExportModalProps) {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch (err: any) {
+    } catch {
       setStatusMsg({ type: 'error', text: 'Error al exportar datos.' });
     }
   };

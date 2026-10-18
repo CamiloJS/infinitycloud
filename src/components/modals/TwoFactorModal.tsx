@@ -31,6 +31,7 @@ export function TwoFactorModal({ isOpen, onClose }: TwoFactorModalProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedCodes, setCopiedCodes] = useState<boolean>(false);
+  const [isBackupDisable, setIsBackupDisable] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
@@ -102,7 +103,8 @@ export function TwoFactorModal({ isOpen, onClose }: TwoFactorModalProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.uid,
-          code: disableCode.trim()
+          code: disableCode.trim(),
+          isBackupCode: isBackupDisable
         })
       });
 
@@ -277,21 +279,37 @@ export function TwoFactorModal({ isOpen, onClose }: TwoFactorModalProps) {
         {step === 'disable' && (
           <form onSubmit={handleDisable} className="mt-4 space-y-4">
             <p className="text-xs text-slate-500">
-              Para desactivar la verificación en dos pasos, confirma con el código actual de 6 dígitos de tu app autenticadora.
+              {isBackupDisable
+                ? 'Ingresa uno de tus 8 códigos de recuperación de respaldo (ej. 4A8F-9B2C) para desactivar 2FA.'
+                : 'Para desactivar la verificación en dos pasos, confirma con el código actual de 6 dígitos de tu app autenticadora.'}
             </p>
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-                Código de autenticación
+                {isBackupDisable ? 'Código de recuperación' : 'Código de autenticación (6 dígitos)'}
               </label>
               <input
                 type="text"
                 required
-                maxLength={6}
+                maxLength={isBackupDisable ? 12 : 6}
                 value={disableCode}
                 onChange={(e) => setDisableCode(e.target.value)}
-                placeholder="000000"
+                placeholder={isBackupDisable ? 'XXXX-XXXX' : '000000'}
                 className="w-full text-center tracking-widest text-lg font-mono px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-white outline-none focus:border-rose-500"
               />
+            </div>
+
+            <div className="flex items-center justify-between text-xs pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBackupDisable(!isBackupDisable);
+                  setDisableCode('');
+                  setError(null);
+                }}
+                className="text-blue-500 hover:underline"
+              >
+                {isBackupDisable ? 'Usar código de 6 dígitos de la app' : '¿Perdiste tu app? Usar código de recuperación'}
+              </button>
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-2">

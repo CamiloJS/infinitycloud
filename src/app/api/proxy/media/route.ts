@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isSafeNotionMediaUrl } from '@/lib/security/ssrf';
+import { requireServerAuth } from '@/lib/auth/session';
 
 export async function GET(req: NextRequest) {
   try {
+    const authCheck = requireServerAuth(req);
+    if (!authCheck.authorized) {
+      return authCheck.response;
+    }
+
     const { searchParams } = new URL(req.url);
     const targetUrl = searchParams.get('url');
 
@@ -10,7 +16,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Parámetro url es requerido' }, { status: 400 });
     }
 
-    // SSRF verification
+    // SSRF verification on incoming URL
     if (!isSafeNotionMediaUrl(targetUrl)) {
       return NextResponse.json(
         { error: 'Destino no permitido por la política de seguridad SSRF.' },
@@ -24,16 +30,45 @@ export async function GET(req: NextRequest) {
       fetchHeaders['Range'] = rangeHeader;
     }
 
-    const response = await fetch(targetUrl, {
-      headers: fetchHeaders,
-      redirect: 'follow',
-      cache: 'no-store'
-    });
+    // Manual redirect handling to avoid open redirect SSRF attacks
+    let currentUrl = targetUrl;
+    let redirectCount = 0;
+    const MAX_REDIRECTS = 3;
+    let response: Response | null = null;
 
-    if (!response.ok && response.status !== 206) {
+    while (redirectCount < MAX_REDIRECTS) {
+      response = await fetch(currentUrl, {
+        headers: fetchHeaders,
+        redirect: 'manual',
+        cache: 'no-store'
+      });
+
+      // Handle HTTP redirects (301, 302, 307, 308)
+      if ([301, 302, 307, 308].includes(response.status)) {
+        const location = response.headers.get('location');
+        if (!location) break;
+
+        const resolvedLocation = new URL(location, currentUrl).toString();
+        // Check redirected target against SSRF whitelist
+        if (!isSafeNotionMediaUrl(resolvedLocation)) {
+          return NextResponse.json(
+            { error: 'Redirección rechazada: El destino remoto no está en la lista autorizada.' },
+            { status: 403 }
+          );
+        }
+
+        currentUrl = resolvedLocation;
+        redirectCount++;
+        continue;
+      }
+
+      break;
+    }
+
+    if (!response || (!response.ok && response.status !== 206)) {
       return NextResponse.json(
-        { error: `Error remoto del proveedor (${response.status})` },
-        { status: response.status }
+        { error: `Error remoto del proveedor (${response?.status || 500})` },
+        { status: response?.status || 500 }
       );
     }
 

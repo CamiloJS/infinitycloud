@@ -35,6 +35,7 @@ export function ItemRow({ item, onOpen, onEdit, onMove }: ItemRowProps) {
   const [showMenu, setShowMenu] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
 
+  const isCurrentPlaying = currentTrack?.id === item.id && isPlaying;
   const coll = collections.find(c => c.id === item.collectionId);
 
   const copyUrl = (e: React.MouseEvent) => {
@@ -58,7 +59,11 @@ export function ItemRow({ item, onOpen, onEdit, onMove }: ItemRowProps) {
   return (
     <div
       onClick={() => onOpen(item)}
-      className="group flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 hover:border-blue-500/40 hover:shadow-md transition-all cursor-pointer select-none text-xs sm:text-sm"
+      className={`group flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border ${
+        isCurrentPlaying
+          ? 'border-violet-500/60 ring-1 ring-violet-500/40 bg-violet-50/20 dark:bg-violet-950/20'
+          : 'border-slate-200/80 dark:border-slate-800/80 hover:border-blue-500/40'
+      } hover:shadow-md transition-all cursor-pointer select-none text-xs sm:text-sm`}
     >
       {/* Left: Thumbnail & Title */}
       <div className="flex items-center gap-3 min-w-0 flex-1 pr-4">

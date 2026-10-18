@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from '@notionhq/client';
 import { decryptSecret } from '@/lib/crypto/encryption';
-import { getUserSettings, fetchUserItems } from '@/lib/firebase/firestore';
+import { requireServerAuth } from '@/lib/auth/session';
+import { getServerUserSettings, fetchServerItems, saveServerItem } from '@/lib/server/store';
 import { CategoryType, InfinityItem } from '@/types';
 
-// Rate limiting helper
+// Rate limiting sleep helper
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 interface DiscoveredFile {
@@ -21,26 +22,31 @@ interface DiscoveredFile {
 
 export async function POST(req: NextRequest) {
   try {
-    const { userId, targetId, targetType, collectionId } = await req.json();
-
-    if (!userId) {
-      return NextResponse.json({ error: 'Usuario no identificado' }, { status: 401 });
+    const authCheck = requireServerAuth(req);
+    if (!authCheck.authorized) {
+      return authCheck.response;
     }
+
+    const { session } = authCheck;
+    const userId = session.userId;
+
+    const body = await req.json();
+    const { targetId, targetType, collectionId } = body;
 
     if (!targetId) {
-      return NextResponse.json({ error: 'Debe especificar una página o base de datos' }, { status: 400 });
+      return NextResponse.json({ error: 'Debe especificar una página o base de datos de Notion' }, { status: 400 });
     }
 
-    const settings = await getUserSettings(userId);
+    const settings = await getServerUserSettings(userId);
     if (!settings.notionTokenEncrypted) {
-      return NextResponse.json({ error: 'Notion no está conectado' }, { status: 400 });
+      return NextResponse.json({ error: 'Notion no está conectado para esta cuenta' }, { status: 400 });
     }
 
     const token = decryptSecret(settings.notionTokenEncrypted);
     const notion = new Client({ auth: token });
 
     // Fetch existing user items to prevent duplicates
-    const existingItems = await fetchUserItems(userId);
+    const existingItems = await fetchServerItems(userId);
     const existingBlockIds = new Set(
       existingItems
         .filter(i => i.provider === 'notion' && i.metadata?.notionBlockId)
@@ -87,9 +93,9 @@ export async function POST(req: NextRequest) {
       });
     };
 
-    // Recursive block scanner
+    // Recursive block scanner with pagination and rate limit pacing
     const scanBlocks = async (blockId: string, depth = 0) => {
-      if (depth > 4) return; // Prevent infinite loops in deeply nested blocks
+      if (depth > 4) return; // Prevent excessive recursion
       
       let cursor: string | undefined = undefined;
       do {
@@ -132,7 +138,6 @@ export async function POST(req: NextRequest) {
     };
 
     if (targetType === 'database') {
-      // Query database
       let dbCursor: string | undefined = undefined;
       do {
         await sleep(200);
@@ -164,14 +169,14 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Also scan page blocks
+          // Scan page blocks
           await scanBlocks(page.id, 0);
         }
 
         dbCursor = dbResponse.has_more ? dbResponse.next_cursor : undefined;
       } while (dbCursor);
     } else {
-      // Target is a single page
+      // Single page target
       const pageInfo: any = await notion.pages.retrieve({ page_id: targetId });
       if (pageInfo.cover) {
         processFileObject(pageInfo.cover, 'Portada de página', 'photos', undefined, pageInfo.id);
@@ -179,7 +184,7 @@ export async function POST(req: NextRequest) {
       await scanBlocks(targetId, 0);
     }
 
-    // Filter out items that match already imported URLs or block IDs
+    // Filter duplicates and construct new items
     const newItemsToCreate: InfinityItem[] = [];
     const seenLocalKeys = new Set<string>();
 
@@ -212,6 +217,8 @@ export async function POST(req: NextRequest) {
         }
       };
 
+      // PERSIST DIRECTLY TO SERVER REPOSITORY SO ITEMS ARE SAVED
+      await saveServerItem(userId, newItem);
       newItemsToCreate.push(newItem);
     }
 

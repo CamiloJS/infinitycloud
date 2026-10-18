@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Client } from '@notionhq/client';
 import { encryptSecret } from '@/lib/crypto/encryption';
-import { saveUserSettings } from '@/lib/firebase/firestore';
+import { requireServerAuth } from '@/lib/auth/session';
+import { saveServerUserSettings } from '@/lib/server/store';
 
 export async function POST(req: NextRequest) {
   try {
+    const authCheck = requireServerAuth(req);
+    if (!authCheck.authorized) {
+      return authCheck.response;
+    }
+
+    const { session } = authCheck;
+    const userId = session.userId;
+
     const body = await req.json();
-    const { token, userId } = body;
+    const { token } = body;
 
     if (!token || typeof token !== 'string') {
       return NextResponse.json(
@@ -15,24 +24,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Usuario no identificado.' },
-        { status: 401 }
-      );
-    }
-
     const trimmedToken = token.trim();
 
-    // Verify token with Notion API
+    // Verify token with official Notion API
     const notion = new Client({ auth: trimmedToken });
     const botUser = await notion.users.me({});
 
     const botName = botUser.name || 'Integración de Notion';
     const encryptedToken = encryptSecret(trimmedToken);
 
-    // Persist encrypted token in user settings
-    await saveUserSettings(userId, {
+    // Persist encrypted token in server settings
+    await saveServerUserSettings(userId, {
       notionConnected: true,
       notionBotName: botName,
       notionTokenEncrypted: encryptedToken,

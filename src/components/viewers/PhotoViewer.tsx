@@ -1,8 +1,20 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { InfinityItem } from '@/types';
-import { X, ZoomIn, ZoomOut, RotateCcw, ChevronLeft, ChevronRight, ExternalLink, Download } from 'lucide-react';
+import { adapterRegistry } from '@/lib/adapters/registry';
+import { 
+  X, 
+  ZoomIn, 
+  ZoomOut, 
+  RotateCcw, 
+  ChevronLeft, 
+  ChevronRight, 
+  ExternalLink, 
+  Download,
+  Maximize2,
+  Minimize2
+} from 'lucide-react';
 
 interface PhotoViewerProps {
   item: InfinityItem | null;
@@ -14,16 +26,33 @@ interface PhotoViewerProps {
 
 export function PhotoViewer({ item, itemsList, onClose, onSelectNext, onSelectPrev }: PhotoViewerProps) {
   const [zoom, setZoom] = useState<number>(1);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setZoom(1);
   }, [item?.id]);
 
   useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
     if (!item) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        } else {
+          onClose();
+        }
+      }
       if (e.key === 'ArrowRight') onSelectNext();
       if (e.key === 'ArrowLeft') onSelectPrev();
     };
@@ -38,8 +67,29 @@ export function PhotoViewer({ item, itemsList, onClose, onSelectNext, onSelectPr
   const handleZoomOut = () => setZoom(z => Math.max(0.5, z - 0.25));
   const handleResetZoom = () => setZoom(1);
 
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        if (containerRef.current?.requestFullscreen) {
+          await containerRef.current.requestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('Fullscreen error:', err);
+    }
+  };
+
+  const directUrl = adapterRegistry.getDirectUrl(item);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md select-none animate-in fade-in duration-200">
+    <div 
+      ref={containerRef}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md select-none animate-in fade-in duration-200"
+    >
       {/* Top Bar */}
       <div className="absolute top-0 inset-x-0 h-16 flex items-center justify-between px-6 bg-gradient-to-b from-black/80 to-transparent z-10">
         <div className="flex items-center gap-3 text-white truncate max-w-lg">
@@ -74,6 +124,15 @@ export function PhotoViewer({ item, itemsList, onClose, onSelectNext, onSelectPr
             <RotateCcw size={18} />
           </button>
 
+          {/* Fullscreen Toggle */}
+          <button
+            onClick={toggleFullscreen}
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+          >
+            {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
+
           <a
             href={item.url}
             target="_blank"
@@ -85,7 +144,7 @@ export function PhotoViewer({ item, itemsList, onClose, onSelectNext, onSelectPr
           </a>
 
           <a
-            href={item.url}
+            href={directUrl}
             download={item.name}
             target="_blank"
             rel="noopener noreferrer"
@@ -120,7 +179,7 @@ export function PhotoViewer({ item, itemsList, onClose, onSelectNext, onSelectPr
       <div className="w-full h-full flex items-center justify-center p-8 overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={item.url}
+          src={directUrl}
           alt={item.name}
           style={{ transform: `scale(${zoom})` }}
           className="max-h-[85vh] max-w-[90vw] object-contain transition-transform duration-150 ease-out shadow-2xl rounded-sm"

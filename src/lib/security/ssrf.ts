@@ -1,8 +1,7 @@
 import net from 'net';
 
-const ALLOWED_NOTION_HOSTS = [
+const ALLOWED_EXACT_HOSTS = [
   'prod-files-secure.s3.us-west-2.amazonaws.com',
-  's3.us-west-2.amazonaws.com',
   'file.notion.so',
   'notion.so',
   'www.notion.so'
@@ -58,16 +57,22 @@ export function isSafeNotionMediaUrl(urlString: string): boolean {
       return false;
     }
 
-    // Check against allowed Notion file hosting domains
-    const isAllowedHost = ALLOWED_NOTION_HOSTS.some(allowed => 
-      hostname === allowed || hostname.endsWith(`.${allowed}`)
-    );
-
-    if (!isAllowedHost) {
-      return false;
+    // Check exact allowed hosts
+    if (ALLOWED_EXACT_HOSTS.includes(hostname)) {
+      return true;
     }
 
-    return true;
+    // Allow subdomains ONLY of notion.so or notion.site
+    if (hostname.endsWith('.notion.so') || hostname.endsWith('.notion.site')) {
+      return true;
+    }
+
+    // If s3.us-west-2.amazonaws.com, must strictly target Notion's secure bucket path
+    if (hostname === 's3.us-west-2.amazonaws.com' && url.pathname.startsWith('/secure.notion-static.com/')) {
+      return true;
+    }
+
+    return false;
   } catch {
     return false;
   }

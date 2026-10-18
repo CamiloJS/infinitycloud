@@ -171,5 +171,10 @@ describe('Data Isolation, Collection Safety & Trash Lifecycle', () => {
     items = await fetchUserItems(userA);
     expect(items).toHaveLength(1);
     expect(items[0].id).toBe('item_active');
+
+    // Permanently delete remaining item
+    await permanentlyDeleteItem(userA, 'item_active');
+    items = await fetchUserItems(userA);
+    expect(items).toHaveLength(0);
   });
 });

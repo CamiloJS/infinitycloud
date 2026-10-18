@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { InfinityItem } from '@/types';
 import { adapterRegistry } from '@/lib/adapters/registry';
-import { X, ExternalLink, AlertCircle } from 'lucide-react';
+import { X, ExternalLink, AlertCircle, Maximize2, Minimize2 } from 'lucide-react';
 
 interface VideoViewerProps {
   item: InfinityItem | null;
@@ -12,15 +12,32 @@ interface VideoViewerProps {
 
 export function VideoViewer({ item, onClose }: VideoViewerProps) {
   const [embedFailed, setEmbedFailed] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setEmbedFailed(false);
   }, [item?.id]);
 
   useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
     if (!item) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        } else {
+          onClose();
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -28,11 +45,46 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
 
   if (!item) return null;
 
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        if (containerRef.current?.requestFullscreen) {
+          await containerRef.current.requestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('Fullscreen error:', err);
+    }
+  };
+
   const embedUrl = adapterRegistry.getEmbedUrl(item);
-  const isDirectVideo = item.provider === 'direct';
+  const directUrl = adapterRegistry.getDirectUrl(item);
+  const urlLower = item.url.toLowerCase();
+  const isVideoExt = (
+    urlLower.endsWith('.mp4') ||
+    urlLower.endsWith('.webm') ||
+    urlLower.endsWith('.mov') ||
+    urlLower.endsWith('.m4v') ||
+    urlLower.endsWith('.ogv')
+  );
+  
+  // Direct video if it has direct video extension, direct provider, or Notion video file
+  const isDirectVideo = (
+    item.provider === 'direct' ||
+    (item.provider === 'notion' && item.category === 'videos') ||
+    Boolean(item.mimeType?.startsWith('video/')) ||
+    isVideoExt
+  );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
+    <div 
+      ref={containerRef}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-200"
+    >
       <div className="relative w-full max-w-5xl bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/80 bg-slate-900/50">
@@ -44,6 +96,14 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+            >
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+
             <a
               href={item.url}
               target="_blank"
@@ -83,13 +143,6 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
                 Abrir en la plataforma original
               </a>
             </div>
-          ) : isDirectVideo ? (
-            <video
-              src={item.url}
-              controls
-              autoPlay
-              className="w-full h-full object-contain"
-            />
           ) : embedUrl ? (
             <iframe
               src={embedUrl}
@@ -98,6 +151,14 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
               allowFullScreen
               className="w-full h-full border-0"
               onError={() => setEmbedFailed(true)}
+            />
+          ) : isDirectVideo ? (
+            <video
+              src={directUrl}
+              controls
+              autoPlay
+              playsInline
+              className="w-full h-full object-contain"
             />
           ) : (
             <div className="text-center p-8">

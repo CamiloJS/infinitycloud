@@ -56,7 +56,29 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     ? adapterRegistry.getEmbedUrl(currentTrack)
     : null;
 
-  // Initialize audio element
+  // State refs for persistent audio listeners
+  const repeatModeRef = useRef<'off' | 'all' | 'one'>(repeatMode);
+  const queueRef = useRef<InfinityItem[]>(queue);
+  const currentIndexRef = useRef<number>(currentIndex);
+  const isShuffledRef = useRef<boolean>(isShuffled);
+
+  useEffect(() => {
+    repeatModeRef.current = repeatMode;
+  }, [repeatMode]);
+
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
+  useEffect(() => {
+    isShuffledRef.current = isShuffled;
+  }, [isShuffled]);
+
+  // Initialize audio element ONCE
   useEffect(() => {
     const audio = new Audio();
     audioRef.current = audio;
@@ -70,7 +92,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     };
 
     const onEnded = () => {
-      if (repeatMode === 'one') {
+      if (repeatModeRef.current === 'one') {
         audio.currentTime = 0;
         audio.play().catch(console.error);
       } else {
@@ -95,7 +117,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
     };
-  }, [repeatMode, currentIndex, queue]);
+  }, []);
 
   const playTrack = (item: InfinityItem, newQueue?: InfinityItem[]) => {
     if (newQueue) {
@@ -157,11 +179,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   };
 
   const nextTrack = () => {
-    if (queue.length === 0) return;
+    const curQueue = queueRef.current;
+    if (curQueue.length === 0) return;
 
-    let nextIdx = currentIndex + 1;
-    if (nextIdx >= queue.length) {
-      if (repeatMode === 'all') {
+    let nextIdx = currentIndexRef.current + 1;
+    if (isShuffledRef.current && curQueue.length > 1) {
+      do {
+        nextIdx = Math.floor(Math.random() * curQueue.length);
+      } while (nextIdx === currentIndexRef.current);
+    } else if (nextIdx >= curQueue.length) {
+      if (repeatModeRef.current === 'all') {
         nextIdx = 0;
       } else {
         setIsPlaying(false);
@@ -170,7 +197,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
 
     setCurrentIndex(nextIdx);
-    playTrack(queue[nextIdx]);
+    playTrack(curQueue[nextIdx]);
   };
 
   useEffect(() => {
@@ -178,7 +205,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   });
 
   const prevTrack = () => {
-    if (queue.length === 0) return;
+    const curQueue = queueRef.current;
+    if (curQueue.length === 0) return;
 
     const audio = audioRef.current;
     if (audio && audio.currentTime > 3) {
@@ -186,13 +214,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    let prevIdx = currentIndex - 1;
+    let prevIdx = currentIndexRef.current - 1;
     if (prevIdx < 0) {
-      prevIdx = queue.length - 1;
+      prevIdx = curQueue.length - 1;
     }
 
     setCurrentIndex(prevIdx);
-    playTrack(queue[prevIdx]);
+    playTrack(curQueue[prevIdx]);
   };
 
   const seekTo = (seconds: number) => {
