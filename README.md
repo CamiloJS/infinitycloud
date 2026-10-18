@@ -55,7 +55,7 @@ Infinity reúne contenido distribuido en diversas fuentes sin almacenar los arch
 - **Autenticación y BD:** [Firebase Authentication](https://firebase.google.com/products/auth) & [Cloud Firestore](https://firebase.google.com/products/firestore)
 - **Seguridad y 2FA:** [otplib](https://github.com/yeojinj/otplib), [qrcode](https://github.com/soldair/node-qrcode), criptografía nativa de Node.js (AES-256-GCM)
 - **Validación:** [Zod](https://zod.dev/)
-- **Pruebas:** [Vitest](https://vitest.dev/) (37 pruebas automatizadas)
+- **Pruebas:** [Vitest](https://vitest.dev/) (48 pruebas automatizadas)
 - **SDK Oficial:** `@notionhq/client`
 
 ---
