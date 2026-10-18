@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Reglas de seguridad estrictas para Infinity
+    // Cada usuario solo puede leer y escribir en su propio espacio /users/{userId}
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Subcolección de archivos (items)
+      match /items/{itemId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Subcolección de colecciones / carpetas (collections)
+      match /collections/{collectionId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // Subcolección de configuraciones privadas (2FA, tokens cifrados de Notion)
+      match /settings/{settingId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Denegar cualquier otro acceso no autorizado por defecto
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

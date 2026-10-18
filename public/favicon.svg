@@ -1,0 +1,24 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="inf-cloud" x1="4" y1="8" x2="44" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stopColor="#06b6d4" />
+      <stop offset="50%" stopColor="#3b82f6" />
+      <stop offset="100%" stopColor="#8b5cf6" />
+    </linearGradient>
+  </defs>
+  <path
+    d="M17.5 17C18.8 12.8 22.8 10 27.2 10.1C32.1 10.2 36.2 13.9 36.9 18.8C40.4 19.5 43 22.5 43 26.2C43 30.5 39.5 34 35.2 34H13C8.6 34 5 30.4 5 26C5 22 7.9 18.7 11.9 18.1C12.3 17.7 12.8 17.3 13.4 17"
+    stroke="url(#inf-cloud)"
+    stroke-width="3.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M16 28C13.2 28 11 25.8 11 23C11 20.2 13.2 18 16 18C19.5 18 22 23 24 23C26 23 28.5 18 32 18C34.8 18 37 20.2 37 23C37 25.8 34.8 28 32 28C28.5 28 26 23 24 23C22 23 19.5 28 16 28Z"
+    stroke="url(#inf-cloud)"
+    stroke-width="3.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  />
+</svg>
