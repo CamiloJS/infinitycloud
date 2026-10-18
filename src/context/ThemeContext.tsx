@@ -8,6 +8,7 @@ interface ThemeContextType {
   theme: Theme;
   resolvedTheme: 'light' | 'dark';
   setTheme: (theme: Theme) => void;
+  toggleTheme: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -63,8 +64,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('infinity_theme', newTheme);
   };
 
+  const toggleTheme = () => {
+    const next = resolvedTheme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+  };
+
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
   );

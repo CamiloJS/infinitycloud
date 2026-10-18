@@ -2,16 +2,21 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useTheme } from '@/context/ThemeContext';
 import { Logo } from '@/components/ui/Logo';
-import { AlertCircle, ArrowRight } from 'lucide-react';
+import { FirebaseSetupModal } from '@/components/modals/FirebaseSetupModal';
+import { AlertCircle, ArrowRight, Sun, Moon, Settings } from 'lucide-react';
 
 export function LoginView() {
-  const { signInWithGoogle, signInWithDemoUser, signInWithEmail, signUpWithEmail } = useAuth();
+  const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
+  const { resolvedTheme, toggleTheme } = useTheme();
+
   const [tab, setTab] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [firebaseModalOpen, setFirebaseModalOpen] = useState<boolean>(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,7 +30,11 @@ export function LoginView() {
         await signUpWithEmail(email, password);
       }
     } catch (err: any) {
-      setError(err.message || 'Error al autenticar');
+      if (err.message === 'FIREBASE_CONFIG_REQUIRED') {
+        setFirebaseModalOpen(true);
+      } else {
+        setError(err.message || 'Error al autenticar');
+      }
     } finally {
       setLoading(false);
     }
@@ -37,14 +46,31 @@ export function LoginView() {
     try {
       await signInWithGoogle();
     } catch (err: any) {
-      setError(err.message || 'Error con Google');
+      if (err.message === 'FIREBASE_CONFIG_REQUIRED') {
+        setFirebaseModalOpen(true);
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setError('Inicio de sesión cancelado.');
+      } else {
+        setError(err.message || 'Error con Google Auth');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950 select-none">
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-white dark:bg-black select-none relative transition-colors duration-200">
+      {/* Top Floating Theme Switcher */}
+      <div className="absolute top-5 right-5 z-10">
+        <button
+          onClick={toggleTheme}
+          className="p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 shadow-md transition-all active:scale-95"
+          title={resolvedTheme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+        >
+          {resolvedTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+      </div>
+
       <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-8 animate-in fade-in zoom-in-95 duration-200">
         {/* Brand */}
         <div className="flex flex-col items-center text-center mb-8">
@@ -68,7 +94,7 @@ export function LoginView() {
         <button
           onClick={handleGoogle}
           disabled={loading}
-          className="w-full py-3 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-100 font-medium text-sm flex items-center justify-center gap-3 shadow-sm transition-all active:scale-[0.98] mb-4"
+          className="w-full py-3 px-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-100 font-medium text-sm flex items-center justify-center gap-3 shadow-sm transition-all active:scale-[0.98] mb-4 disabled:opacity-50"
         >
           <svg width="18" height="18" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -133,34 +159,29 @@ export function LoginView() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white font-medium text-xs md:text-sm shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-1.5"
+            className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white font-medium text-xs md:text-sm shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
             <span>{tab === 'login' ? 'Acceder' : 'Registrarse'}</span>
             <ArrowRight size={15} />
           </button>
         </form>
 
-        {/* Demo Accounts Quick-Test */}
-        <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 text-center">
-          <p className="text-[11px] text-slate-400 mb-2">
-            Entorno de prueba (Aislamiento de datos por cuenta):
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => signInWithDemoUser(1)}
-              className="py-1.5 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors"
-            >
-              Cuenta 1 (Camilo)
-            </button>
-            <button
-              onClick={() => signInWithDemoUser(2)}
-              className="py-1.5 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors"
-            >
-              Cuenta 2 (Prueba B)
-            </button>
-          </div>
+        {/* Firebase Config Trigger */}
+        <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-center">
+          <button
+            onClick={() => setFirebaseModalOpen(true)}
+            className="text-[11px] font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center gap-1.5 py-1 px-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <Settings size={13} />
+            <span>Configurar credenciales de Firebase</span>
+          </button>
         </div>
       </div>
+
+      <FirebaseSetupModal
+        isOpen={firebaseModalOpen}
+        onClose={() => setFirebaseModalOpen(false)}
+      />
     </div>
   );
 }

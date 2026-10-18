@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useItems } from '@/context/ItemsContext';
+import { useTheme } from '@/context/ThemeContext';
 import { ProviderType, SortOption } from '@/types';
 import { 
   Search, 
@@ -11,7 +12,9 @@ import {
   Plus, 
   ArrowUpDown, 
   Filter, 
-  Menu 
+  Menu,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -38,6 +41,8 @@ export function Header({
     collections,
     activeCollectionId
   } = useItems();
+
+  const { resolvedTheme, toggleTheme } = useTheme();
 
   const providers: { id: ProviderType | 'all'; label: string }[] = [
     { id: 'all', label: 'Todos los proveedores' },
@@ -163,6 +168,15 @@ export function Header({
             <List size={16} />
           </button>
         </div>
+
+        {/* Theme Toggle */}
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-white dark:hover:bg-slate-800 transition-all shadow-sm"
+          title={resolvedTheme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+        >
+          {resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
 
         {/* Mobile Add Button */}
         <button

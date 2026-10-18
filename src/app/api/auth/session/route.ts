@@ -24,11 +24,8 @@ export async function POST(req: NextRequest) {
       } catch {
         return NextResponse.json({ error: 'Token de autenticación de Firebase inválido' }, { status: 401 });
       }
-    } else if (demoUserNum === 1 || demoUserNum === 2) {
-      userId = demoUserNum === 1 ? 'demo_user_alpha_1' : 'demo_user_beta_2';
-      email = demoUserNum === 1 ? 'camilo@infinity.dev' : 'test.account@infinity.dev';
     } else if (inputUid) {
-      // Fallback for direct authenticated client when Firebase Admin keys aren't yet populated
+      // Fallback for direct authenticated client
       userId = inputUid;
       email = inputEmail || `${inputUid}@infinity.dev`;
     } else {

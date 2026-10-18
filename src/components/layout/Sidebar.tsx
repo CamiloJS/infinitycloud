@@ -57,7 +57,7 @@ export function Sidebar({
     deleteCollection
   } = useItems();
 
-  const { user, signOut, signInWithDemoUser } = useAuth();
+  const { user, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
 
   const [activeMenuCollId, setActiveMenuCollId] = useState<string | null>(null);
@@ -362,27 +362,17 @@ export function Sidebar({
               </button>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center">
               <button
                 onClick={onOpen2FaModal}
-                className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors ${
+                className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
                   user.twoFactorEnabled
                     ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
               >
-                <ShieldCheck size={13} />
+                <ShieldCheck size={14} />
                 <span>{user.twoFactorEnabled ? '2FA Activo' : 'Configurar 2FA'}</span>
-              </button>
-
-              {/* Demo Account Switcher for Testing Data Separation */}
-              <button
-                onClick={() => signInWithDemoUser(user.uid === 'demo_user_alpha_1' ? 2 : 1)}
-                className="py-1.5 px-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[11px] font-medium flex items-center gap-1 transition-colors"
-                title="Alternar entre Cuenta 1 y Cuenta 2 para comprobar aislamiento de datos"
-              >
-                <Users size={12} />
-                <span>{user.uid === 'demo_user_alpha_1' ? 'A' : 'B'}</span>
               </button>
             </div>
           </div>

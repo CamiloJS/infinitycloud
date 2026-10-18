@@ -6,9 +6,10 @@ import {
   signOut as fbSignOut, 
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword,
+  User as FirebaseUser
 } from 'firebase/auth';
-import { auth, googleProvider, isFirebaseConfigured } from '@/lib/firebase/client';
+import { auth, googleProvider, isFirebaseConfigured, checkFirebaseConfigured } from '@/lib/firebase/client';
 import { getUserSettings } from '@/lib/firebase/firestore';
 import { UserProfile } from '@/types';
 
@@ -18,7 +19,6 @@ interface AuthContextType {
   isFirebaseReady: boolean;
   twoFactorRequired: boolean;
   signInWithGoogle: () => Promise<void>;
-  signInWithDemoUser: (userNum: 1 | 2) => Promise<void>;
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   signUpWithEmail: (email: string, pass: string) => Promise<void>;
   verifyTwoFactorChallenge: (code: string, isBackup: boolean) => Promise<boolean>;
@@ -37,8 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Load user profile & 2FA status
   const loadProfile = async (
     rawUser: { uid: string; email?: string | null; displayName?: string | null; photoURL?: string | null },
-    idToken?: string,
-    demoNum?: 1 | 2
+    idToken?: string
   ) => {
     try {
       // Sync verified server session cookie
@@ -48,7 +47,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             idToken,
-            demoUserNum: demoNum,
             uid: rawUser.uid,
             email: rawUser.email
           })
@@ -94,47 +92,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    // If demo user is stored in session
-    const savedDemo = sessionStorage.getItem('infinity_demo_user');
-    if (savedDemo) {
-      try {
-        const parsed = JSON.parse(savedDemo);
-        loadProfile(parsed);
-        return;
-      } catch {
-        // ignore
-      }
+    if (!checkFirebaseConfigured()) {
+      setLoading(false);
+      return;
     }
 
-    if (isFirebaseConfigured) {
-      const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
-        if (fbUser) {
-          loadProfile({
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
+      if (fbUser) {
+        try {
+          const idToken = await fbUser.getIdToken();
+          await loadProfile({
             uid: fbUser.uid,
             email: fbUser.email,
             displayName: fbUser.displayName,
             photoURL: fbUser.photoURL
-          });
-        } else {
-          setUser(null);
-          setTwoFactorRequired(false);
+          }, idToken);
+        } catch (e) {
+          console.error('Failed to get token on auth change:', e);
           setLoading(false);
         }
-      });
-      return () => unsubscribe();
-    } else {
-      // In demo/test mode with no Firebase keys, default to ready
-      setLoading(false);
-    }
+      } else {
+        setUser(null);
+        setPendingUser(null);
+        setTwoFactorRequired(false);
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const signInWithGoogle = async () => {
-    setLoading(true);
-    if (!isFirebaseConfigured) {
-      // Demo user 1
-      await signInWithDemoUser(1);
-      return;
+    if (!checkFirebaseConfigured()) {
+      throw new Error('FIREBASE_CONFIG_REQUIRED');
     }
+    setLoading(true);
     try {
       const res = await signInWithPopup(auth, googleProvider);
       const idToken = await res.user.getIdToken();
@@ -151,54 +143,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signInWithDemoUser = async (userNum: 1 | 2) => {
-    setLoading(true);
-    const demoProfile = userNum === 1 ? {
-      uid: 'demo_user_alpha_1',
-      email: 'camilo@infinity.dev',
-      displayName: 'Camilo Jaimes',
-      photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'
-    } : {
-      uid: 'demo_user_beta_2',
-      email: 'test.account@infinity.dev',
-      displayName: 'Cuenta de Prueba 2',
-      photoURL: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80'
-    };
-
-    sessionStorage.setItem('infinity_demo_user', JSON.stringify(demoProfile));
-    await loadProfile(demoProfile, undefined, userNum);
-  };
-
   const signInWithEmail = async (email: string, pass: string) => {
-    setLoading(true);
-    if (!isFirebaseConfigured) {
-      await signInWithDemoUser(1);
-      return;
+    if (!checkFirebaseConfigured()) {
+      throw new Error('FIREBASE_CONFIG_REQUIRED');
     }
-    const res = await signInWithEmailAndPassword(auth, email, pass);
-    const idToken = await res.user.getIdToken();
-    await loadProfile({
-      uid: res.user.uid,
-      email: res.user.email,
-      displayName: res.user.displayName,
-      photoURL: res.user.photoURL
-    }, idToken);
+    setLoading(true);
+    try {
+      const res = await signInWithEmailAndPassword(auth, email, pass);
+      const idToken = await res.user.getIdToken();
+      await loadProfile({
+        uid: res.user.uid,
+        email: res.user.email,
+        displayName: res.user.displayName,
+        photoURL: res.user.photoURL
+      }, idToken);
+    } catch (error: any) {
+      setLoading(false);
+      throw error;
+    }
   };
 
   const signUpWithEmail = async (email: string, pass: string) => {
-    setLoading(true);
-    if (!isFirebaseConfigured) {
-      await signInWithDemoUser(1);
-      return;
+    if (!checkFirebaseConfigured()) {
+      throw new Error('FIREBASE_CONFIG_REQUIRED');
     }
-    const res = await createUserWithEmailAndPassword(auth, email, pass);
-    const idToken = await res.user.getIdToken();
-    await loadProfile({
-      uid: res.user.uid,
-      email: res.user.email,
-      displayName: res.user.displayName,
-      photoURL: res.user.photoURL
-    }, idToken);
+    setLoading(true);
+    try {
+      const res = await createUserWithEmailAndPassword(auth, email, pass);
+      const idToken = await res.user.getIdToken();
+      await loadProfile({
+        uid: res.user.uid,
+        email: res.user.email,
+        displayName: res.user.displayName,
+        photoURL: res.user.photoURL
+      }, idToken);
+    } catch (error: any) {
+      setLoading(false);
+      throw error;
+    }
   };
 
   const verifyTwoFactorChallenge = async (code: string, isBackup: boolean): Promise<boolean> => {
@@ -222,26 +204,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return true;
       }
       return false;
-    } catch {
+    } catch (err) {
+      console.error('Error verifying 2FA challenge:', err);
       return false;
     }
   };
 
   const signOut = async () => {
-    setLoading(true);
-    sessionStorage.removeItem('infinity_demo_user');
     try {
       await fetch('/api/auth/session', { method: 'DELETE' });
-    } catch (e) {
-      console.warn('Session delete error:', e);
+      if (checkFirebaseConfigured()) {
+        await fbSignOut(auth);
+      }
+      setUser(null);
+      setPendingUser(null);
+      setTwoFactorRequired(false);
+    } catch (err) {
+      console.error('Sign out error:', err);
     }
-    if (isFirebaseConfigured) {
-      await fbSignOut(auth);
-    }
-    setUser(null);
-    setPendingUser(null);
-    setTwoFactorRequired(false);
-    setLoading(false);
   };
 
   const refreshProfile = async () => {
@@ -258,7 +238,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isFirebaseReady: isFirebaseConfigured,
         twoFactorRequired,
         signInWithGoogle,
-        signInWithDemoUser,
         signInWithEmail,
         signUpWithEmail,
         verifyTwoFactorChallenge,
