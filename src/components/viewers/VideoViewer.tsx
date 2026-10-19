@@ -646,9 +646,23 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                     <span>Guardar y Reproducir</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  💡 Haz clic en los 3 puntos del video en Notion y selecciona &quot;Copiar enlace al bloque&quot; o &quot;Ver original&quot; (.mp4) para reproducirlo directamente aquí.
-                </p>
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] leading-relaxed space-y-1.5 text-left">
+                  <p className="font-bold text-amber-300 flex items-center gap-1.5">
+                    <span>⚠️</span>
+                    <span>Página privada de Notion (publicAccessRole: none)</span>
+                  </p>
+                  <p className="text-slate-300">
+                    Notion protege este enlace de forma privada dentro de tu sesión. Para que cualquier plataforma externa pueda leer y reproducir el video directamente:
+                  </p>
+                  <div className="pl-2 space-y-1 text-slate-300 border-l border-amber-500/30">
+                    <p>
+                      <strong className="text-white">1. En Notion (automático):</strong> Haz clic en <span className="text-amber-200 font-semibold">Compartir</span> en la esquina superior &gt; ve a la pestaña <span className="text-amber-200 font-semibold">Publicar</span> &gt; y pulsa <span className="text-amber-200 font-semibold">&quot;Publicar en la web&quot;</span>. Con eso Infinity lo detectará y reproducirá solo.
+                    </p>
+                    <p>
+                      <strong className="text-white">2. O enlace directo:</strong> En Notion, haz clic en los 3 puntos del video &gt; <span className="text-amber-200 font-semibold">&quot;Ver original&quot;</span>, copia el link del archivo (.mp4) y pégalo en la casilla de arriba.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="flex items-center justify-center gap-2.5 flex-wrap pt-1">
