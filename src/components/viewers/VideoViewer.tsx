@@ -34,6 +34,48 @@ interface VideoViewerProps {
   readOnly?: boolean;
 }
 
+export function isValidDirectVideoStream(url?: string | null): boolean {
+  if (!url) return false;
+  const l = url.trim().toLowerCase();
+  
+  // HTML web pages from Notion or any domain without a direct media format are NEVER direct video streams
+  if (
+    l.includes('notion.so/') ||
+    l.includes('notion.site/') ||
+    l.includes('notion.com/') ||
+    l.includes('app.notion.com')
+  ) {
+    const hasVidExt = (
+      l.endsWith('.mp4') || l.endsWith('.webm') || l.endsWith('.mov') || l.endsWith('.m4v') || l.endsWith('.ogv') ||
+      l.includes('.mp4?') || l.includes('.webm?') || l.includes('.mov?')
+    );
+    if (!hasVidExt) return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.pathname === '/' || parsed.pathname === '') return false;
+  } catch {
+    return false;
+  }
+
+  return (
+    l.endsWith('.mp4') ||
+    l.endsWith('.webm') ||
+    l.endsWith('.mov') ||
+    l.endsWith('.m4v') ||
+    l.endsWith('.ogv') ||
+    l.includes('.mp4?') ||
+    l.includes('.webm?') ||
+    l.includes('.mov?') ||
+    l.includes('prod-files-secure.s3') ||
+    l.includes('file.notion.so') ||
+    l.includes('amazonaws.com') ||
+    l.startsWith('blob:') ||
+    l.startsWith('data:video/')
+  );
+}
+
 export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   const { editItem } = useItems();
   const [embedFailed, setEmbedFailed] = useState<boolean>(false);
@@ -93,8 +135,9 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
 
     if (!item) return;
 
-    // Check if the item already has a direct Notion video or S3 URL bound
-    if (item.metadata?.s3Url) {
+    // Only bind s3Url if it is actually a valid video stream, not an HTML page!
+    const savedS3IsStream = isValidDirectVideoStream(item.metadata?.s3Url);
+    if (item.metadata?.s3Url && savedS3IsStream) {
       setExtractedVideo({
         id: item.metadata.notionBlockId || 'saved_video',
         url: item.metadata.s3Url,
@@ -108,16 +151,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                      item.url.includes('notion.site') || 
                      item.url.includes('notion.com');
 
-    const hasIsolatedStream = Boolean(item.metadata?.s3Url && (
-      item.metadata.s3Url.endsWith('.mp4') ||
-      item.metadata.s3Url.endsWith('.webm') ||
-      item.metadata.s3Url.endsWith('.mov') ||
-      item.metadata.s3Url.includes('youtube.com') ||
-      item.metadata.s3Url.includes('youtu.be') ||
-      item.metadata.s3Url.includes('vimeo.com') ||
-      item.metadata.s3Url.includes('file.notion.so') ||
-      item.metadata.s3Url.includes('amazonaws.com')
-    ));
+    const hasIsolatedStream = Boolean(item.metadata?.s3Url && savedS3IsStream);
 
     if (isNotion && !hasIsolatedStream) {
       setIsExtractingNotion(true);
@@ -364,22 +398,28 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                    item.url.includes('notion.site') || 
                    item.url.includes('notion.com');
 
+  const hasExtractedVideo = Boolean(extractedVideo?.url && isValidDirectVideoStream(extractedVideo.url));
+  const hasS3Video = Boolean(item.metadata?.s3Url && isValidDirectVideoStream(item.metadata.s3Url));
+  const hasDirectUrlVideo = Boolean(directUrl && isValidDirectVideoStream(directUrl));
+  const hasPlayableNotionVideo = hasExtractedVideo || hasS3Video;
+
   const isDirectVideo = !embedUrl && (
-    Boolean(extractedVideo?.url) ||
-    Boolean(item.metadata?.s3Url && isVideoExt) ||
-    Boolean(item.metadata?.isNotionVideo && item.metadata?.s3Url) ||
-    (!isNotion && item.provider === 'direct') ||
-    (!isNotion && Boolean(item.mimeType?.startsWith('video/'))) ||
-    isVideoExt
+    hasExtractedVideo ||
+    hasS3Video ||
+    (!isNotion && (hasDirectUrlVideo || item.provider === 'direct' || isVideoExt || Boolean(item.mimeType?.startsWith('video/'))))
   );
 
-  const notionDirectUrl = extractedVideo?.url || (
-    item.provider === 'notion'
+  const notionDirectUrl = (hasExtractedVideo ? extractedVideo.url : null) || (hasS3Video ? item.metadata?.s3Url : null) || (
+    item.provider === 'notion' && (item.metadata?.notionBlockId || item.metadata?.isNotionVideo)
       ? `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}&url=${encodeURIComponent(item.metadata?.s3Url || item.url)}${item.metadata?.notionBlockId ? `&blockId=${encodeURIComponent(item.metadata.notionBlockId)}` : ''}${item.metadata?.notionPageId ? `&pageId=${encodeURIComponent(item.metadata.notionPageId)}` : ''}`
       : directUrl
   );
 
-  const baseSrc = item.provider === 'notion' ? notionDirectUrl : (extractedVideo?.url || directUrl);
+  const baseSrc = hasExtractedVideo 
+    ? extractedVideo.url 
+    : (hasS3Video 
+        ? item.metadata!.s3Url 
+        : (item.provider === 'notion' ? notionDirectUrl : directUrl));
 
   const effectiveVideoSrc = corsRetryState === 'proxy'
     ? (item.provider === 'notion'
@@ -395,7 +435,9 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
       // Second retry: fallback to direct play without CORS
       setCorsRetryState('nocors');
     } else {
-      setEmbedFailed(true);
+      if (!isNotion) {
+        setEmbedFailed(true);
+      }
     }
   };
 
@@ -533,7 +575,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
               <p className="text-slate-300 font-medium text-sm">Detectando video en Notion...</p>
               <p className="text-slate-500 text-xs">Conectando con el contenido multimedia</p>
             </div>
-          ) : isNotion && !extractedVideo && !item.metadata?.s3Url ? (
+          ) : isNotion && !hasPlayableNotionVideo ? (
             <div className="text-center p-5 sm:p-7 max-w-lg select-text max-h-[85vh] overflow-y-auto w-full">
               <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shadow-xl">
                 {notionCoverUrl || item.thumbnailUrl ? (
@@ -632,7 +674,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                 </a>
               </div>
             </div>
-          ) : embedFailed ? (
+          ) : embedFailed && !isNotion ? (
             <div className="text-center p-8 max-w-md">
               <AlertCircle size={48} className="mx-auto text-amber-400 mb-3" />
               <h4 className="text-white font-medium text-lg mb-2">Inserción restringida por el proveedor</h4>

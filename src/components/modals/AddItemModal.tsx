@@ -5,6 +5,7 @@ import { useItems } from '@/context/ItemsContext';
 import { adapterRegistry } from '@/lib/adapters/registry';
 import { CategoryType, ProviderType } from '@/types';
 import { X, Link2, Check, Sparkles, Loader2, CheckCircle2, Film, Play } from 'lucide-react';
+import { isValidDirectVideoStream } from '@/components/viewers/VideoViewer';
 
 interface AddItemModalProps {
   isOpen: boolean;
@@ -143,11 +144,13 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
           customMeta.s3Url = directNotionVideoUrl.trim();
           customMeta.isNotionVideo = true;
           customMeta.originalUrl = cleanUrl;
-        } else if (selectedNotionVideo) {
+        } else if (selectedNotionVideo && isValidDirectVideoStream(selectedNotionVideo.url)) {
           customMeta.s3Url = selectedNotionVideo.url;
           customMeta.isNotionVideo = true;
           customMeta.notionBlockId = selectedNotionVideo.notionBlockId;
           customMeta.notionPageId = selectedNotionVideo.notionPageId;
+          customMeta.originalUrl = cleanUrl;
+        } else {
           customMeta.originalUrl = cleanUrl;
         }
       }
