@@ -311,48 +311,56 @@ export default function HomePage() {
       </main>
 
       {/* Viewers Modals */}
-      <ViewerErrorBoundary onClose={() => setActivePhoto(null)} title="No se pudo abrir la imagen">
-        <PhotoViewer
-          item={activePhoto}
-          itemsList={photosList}
-          onClose={() => setActivePhoto(null)}
-          onSelectNext={handleNextPhoto}
-          onSelectPrev={handlePrevPhoto}
-        />
-      </ViewerErrorBoundary>
+      {activePhoto && (
+        <ViewerErrorBoundary onClose={() => setActivePhoto(null)} title="No se pudo abrir la imagen">
+          <PhotoViewer
+            item={activePhoto}
+            itemsList={photosList}
+            onClose={() => setActivePhoto(null)}
+            onSelectNext={handleNextPhoto}
+            onSelectPrev={handlePrevPhoto}
+          />
+        </ViewerErrorBoundary>
+      )}
 
-      <ViewerErrorBoundary onClose={() => setActiveVideo(null)} title="No se pudo reproducir el video">
-        <VideoViewer
-          item={activeVideo}
-          onClose={() => setActiveVideo(null)}
-        />
-      </ViewerErrorBoundary>
+      {activeVideo && (
+        <ViewerErrorBoundary onClose={() => setActiveVideo(null)} title="No se pudo reproducir el video">
+          <VideoViewer
+            item={activeVideo}
+            onClose={() => setActiveVideo(null)}
+          />
+        </ViewerErrorBoundary>
+      )}
 
-      <ViewerErrorBoundary onClose={() => setActiveDoc(null)} title="No se pudo abrir el documento">
-        <DocumentViewer
-          item={activeDoc}
-          onClose={() => setActiveDoc(null)}
-          onPlayVideo={(videoItem) => {
-            setActiveDoc(null);
-            setActiveVideo(videoItem);
-          }}
-          onEditDocument={(docItem) => {
-            setActiveDoc(null);
-            handleOpenTextEditor(docItem);
-          }}
-        />
-      </ViewerErrorBoundary>
+      {activeDoc && (
+        <ViewerErrorBoundary onClose={() => setActiveDoc(null)} title="No se pudo abrir el documento">
+          <DocumentViewer
+            item={activeDoc}
+            onClose={() => setActiveDoc(null)}
+            onPlayVideo={(videoItem) => {
+              setActiveDoc(null);
+              setActiveVideo(videoItem);
+            }}
+            onEditDocument={(docItem) => {
+              setActiveDoc(null);
+              handleOpenTextEditor(docItem);
+            }}
+          />
+        </ViewerErrorBoundary>
+      )}
 
-      <ViewerErrorBoundary onClose={() => setActiveOther(null)} title="No se pudo abrir el archivo">
-        <OtherViewer
-          item={activeOther}
-          onClose={() => setActiveOther(null)}
-          onPlayVideo={(videoItem) => {
-            setActiveOther(null);
-            setActiveVideo(videoItem);
-          }}
-        />
-      </ViewerErrorBoundary>
+      {activeOther && (
+        <ViewerErrorBoundary onClose={() => setActiveOther(null)} title="No se pudo abrir el archivo">
+          <OtherViewer
+            item={activeOther}
+            onClose={() => setActiveOther(null)}
+            onPlayVideo={(videoItem) => {
+              setActiveOther(null);
+              setActiveVideo(videoItem);
+            }}
+          />
+        </ViewerErrorBoundary>
+      )}
 
       {/* Action Modals */}
       <AddItemModal

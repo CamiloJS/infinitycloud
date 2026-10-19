@@ -243,6 +243,13 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [item, isMaximized, onClose]);
 
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = playbackSpeed;
+      videoRef.current.defaultPlaybackRate = playbackSpeed;
+    }
+  }, [playbackSpeed]);
+
   if (!item) return null;
 
   const toggleMaximize = async () => {
@@ -321,13 +328,6 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
       videoRef.current.defaultPlaybackRate = speed;
     }
   };
-
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.playbackRate = playbackSpeed;
-      videoRef.current.defaultPlaybackRate = playbackSpeed;
-    }
-  }, [playbackSpeed]);
 
   const toggleLoop = () => {
     const next = !isLooping;
