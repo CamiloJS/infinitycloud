@@ -46,17 +46,44 @@ export class YouTubeAdapter implements ProviderAdapter {
 
   async detect(urlString: string): Promise<DetectedMetadata> {
     const videoId = this.extractVideoId(urlString);
-    const title = videoId ? `Video de YouTube (${videoId})` : 'Video de YouTube';
-    const thumbnailUrl = videoId 
+    let title = videoId ? `Video (${videoId})` : 'Video';
+    let thumbnailUrl = videoId 
       ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
       : undefined;
+
+    if (videoId) {
+      try {
+        const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(urlString)}&format=json`;
+        const res = await fetch(oembedUrl, { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.title) title = data.title;
+          if (data?.thumbnail_url) thumbnailUrl = data.thumbnail_url;
+        } else {
+          throw new Error('Direct oembed failed');
+        }
+      } catch {
+        try {
+          if (typeof window !== 'undefined') {
+            const localRes = await fetch(`/api/oembed?url=${encodeURIComponent(urlString)}`, { signal: AbortSignal.timeout(3000) });
+            if (localRes.ok) {
+              const data = await localRes.json();
+              if (data?.title) title = data.title;
+              if (data?.thumbnail_url) thumbnailUrl = data.thumbnail_url;
+            }
+          }
+        } catch {
+          // Keep fallback
+        }
+      }
+    }
 
     return {
       name: title,
       provider: 'youtube',
       category: 'videos',
       thumbnailUrl,
-      embedUrl: videoId ? `https://www.youtube-nocookie.com/embed/${videoId}?rel=0` : undefined,
+      embedUrl: videoId ? `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&playsinline=1&iv_load_policy=3` : undefined,
       metadata: {
         videoId: videoId || undefined
       }
@@ -66,6 +93,6 @@ export class YouTubeAdapter implements ProviderAdapter {
   getEmbedUrl(item: InfinityItem): string | null {
     const videoId = item.metadata?.videoId || this.extractVideoId(item.url);
     if (!videoId) return null;
-    return `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&autoplay=1`;
+    return `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&autoplay=1&modestbranding=1&playsinline=1&iv_load_policy=3`;
   }
 }

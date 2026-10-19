@@ -145,7 +145,7 @@ export function ItemCard({ item, onOpen, onEdit, onMove }: ItemCardProps) {
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase tracking-wider ${getProviderBadgeColor()}`}>
-              {item.provider}
+              {item.provider === 'youtube' ? 'video' : item.provider}
             </span>
 
             {coll && (

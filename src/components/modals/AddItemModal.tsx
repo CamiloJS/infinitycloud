@@ -46,7 +46,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
         const detected = await adapterRegistry.detect(trimmed);
         setDetectedProvider(detected.provider);
         setCategory(detected.category);
-        if (!name.trim()) {
+        if (!name.trim() || name === 'Video de YouTube' || name.startsWith('Video (')) {
           setName(detected.name);
         }
       } catch {
@@ -90,7 +90,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
             </div>
             <div>
               <h3 className="font-bold text-base text-slate-800 dark:text-white">Añadir nuevo enlace</h3>
-              <p className="text-xs text-slate-400">Pega un enlace de YouTube, Drive, Notion o archivo directo</p>
+              <p className="text-xs text-slate-400">Pega un enlace web, Notion, Drive o archivo directo</p>
             </div>
           </div>
           <button
@@ -124,7 +124,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
               />
               {detectedProvider && (
                 <div className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/20">
-                  {detectedProvider}
+                  {detectedProvider === 'youtube' ? 'video' : detectedProvider}
                 </div>
               )}
             </div>

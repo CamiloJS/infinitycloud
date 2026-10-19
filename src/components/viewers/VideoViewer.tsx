@@ -12,7 +12,7 @@ interface VideoViewerProps {
 
 export function VideoViewer({ item, onClose }: VideoViewerProps) {
   const [embedFailed, setEmbedFailed] = useState<boolean>(false);
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isMaximized, setIsMaximized] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -21,7 +21,10 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
+      const inFullscreen = Boolean(document.fullscreenElement);
+      if (inFullscreen) {
+        setIsMaximized(true);
+      }
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -34,6 +37,8 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
       if (e.key === 'Escape') {
         if (document.fullscreenElement) {
           document.exitFullscreen().catch(() => {});
+        } else if (isMaximized) {
+          setIsMaximized(false);
         } else {
           onClose();
         }
@@ -41,23 +46,26 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [item, onClose]);
+  }, [item, isMaximized, onClose]);
 
   if (!item) return null;
 
-  const toggleFullscreen = async () => {
+  const toggleMaximize = async () => {
+    const next = !isMaximized;
+    setIsMaximized(next);
+
     try {
-      if (!document.fullscreenElement) {
-        if (containerRef.current?.requestFullscreen) {
+      if (next) {
+        if (!document.fullscreenElement && containerRef.current?.requestFullscreen) {
           await containerRef.current.requestFullscreen();
         }
       } else {
-        if (document.exitFullscreen) {
+        if (document.fullscreenElement && document.exitFullscreen) {
           await document.exitFullscreen();
         }
       }
-    } catch (err) {
-      console.warn('Fullscreen error:', err);
+    } catch {
+      // In-window fullscreen fallback works directly through isMaximized state
     }
   };
 
@@ -72,7 +80,6 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
     urlLower.endsWith('.ogv')
   );
   
-  // Direct video if it has direct video extension, direct provider, or Notion video file
   const isDirectVideo = (
     item.provider === 'direct' ||
     (item.provider === 'notion' && item.category === 'videos') ||
@@ -83,49 +90,42 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
   return (
     <div 
       ref={containerRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md transition-all duration-200 select-none ${
+        isMaximized ? 'p-0 w-screen h-screen' : 'p-3 sm:p-6'
+      }`}
     >
-      <div className="relative w-full max-w-5xl bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/80 bg-slate-900/50">
-          <div className="flex items-center gap-3 truncate max-w-lg">
-            <span className="font-semibold text-white truncate text-base">{item.name}</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 uppercase tracking-wider font-semibold">
-              {item.provider}
-            </span>
-          </div>
+      <div 
+        className={`relative bg-black transition-all duration-200 overflow-hidden flex flex-col items-center justify-center shadow-2xl ${
+          isMaximized 
+            ? 'w-full h-full max-w-none max-h-none rounded-none border-0' 
+            : 'w-full max-w-5xl rounded-2xl border border-slate-800'
+        }`}
+      >
+        {/* Minimal Floating Controls at Top Right */}
+        <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
+          <button
+            onClick={toggleMaximize}
+            className="p-2 rounded-xl bg-black/60 hover:bg-black/90 text-white/80 hover:text-white backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-95"
+            title={isMaximized ? 'Restaurar tamaño (Esc)' : 'Maximizar / Pantalla completa'}
+          >
+            {isMaximized ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleFullscreen}
-              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
-            >
-              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-            </button>
-
-            <a
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              title="Abrir en plataforma original"
-            >
-              <ExternalLink size={18} />
-            </a>
-
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-              title="Cerrar (Esc)"
-            >
-              <X size={20} />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl bg-black/60 hover:bg-black/90 text-white/80 hover:text-white backdrop-blur-md border border-white/10 shadow-lg transition-all active:scale-95"
+            title="Cerrar (Esc)"
+          >
+            <X size={20} />
+          </button>
         </div>
 
         {/* Video Player Container */}
-        <div className="relative w-full aspect-video bg-black flex items-center justify-center">
+        <div 
+          className={`relative w-full bg-black flex items-center justify-center ${
+            isMaximized ? 'w-full h-full flex-1' : 'aspect-video'
+          }`}
+        >
           {embedFailed ? (
             <div className="text-center p-8 max-w-md">
               <AlertCircle size={48} className="mx-auto text-amber-400 mb-3" />
@@ -147,7 +147,7 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
             <iframe
               src={embedUrl}
               title={item.name}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
               allowFullScreen
               className="w-full h-full border-0"
               onError={() => setEmbedFailed(true)}

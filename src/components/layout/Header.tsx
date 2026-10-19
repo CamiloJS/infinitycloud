@@ -46,7 +46,7 @@ export function Header({
 
   const providers: { id: ProviderType | 'all'; label: string }[] = [
     { id: 'all', label: 'Todos los proveedores' },
-    { id: 'youtube', label: 'YouTube' },
+    { id: 'youtube', label: 'Videos' },
     { id: 'drive', label: 'Google Drive' },
     { id: 'notion', label: 'Notion' },
     { id: 'soundcloud', label: 'SoundCloud' },

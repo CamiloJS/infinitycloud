@@ -98,7 +98,7 @@ export function ItemRow({ item, onOpen, onEdit, onMove }: ItemRowProps) {
 
           <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
             <span className="uppercase text-[10px] font-semibold tracking-wider font-mono">
-              {item.provider}
+              {item.provider === 'youtube' ? 'video' : item.provider}
             </span>
             {coll && (
               <>

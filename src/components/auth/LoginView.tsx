@@ -4,8 +4,7 @@ import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { Logo } from '@/components/ui/Logo';
-import { FirebaseSetupModal } from '@/components/modals/FirebaseSetupModal';
-import { AlertCircle, ArrowRight, Sun, Moon, Settings } from 'lucide-react';
+import { AlertCircle, ArrowRight, Sun, Moon } from 'lucide-react';
 
 export function LoginView() {
   const { signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
@@ -16,8 +15,6 @@ export function LoginView() {
   const [password, setPassword] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [firebaseModalOpen, setFirebaseModalOpen] = useState<boolean>(false);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -30,11 +27,7 @@ export function LoginView() {
         await signUpWithEmail(email, password);
       }
     } catch (err: any) {
-      if (err.message === 'FIREBASE_CONFIG_REQUIRED') {
-        setFirebaseModalOpen(true);
-      } else {
-        setError(err.message || 'Error al autenticar');
-      }
+      setError(err.message || 'Error al autenticar');
     } finally {
       setLoading(false);
     }
@@ -46,9 +39,7 @@ export function LoginView() {
     try {
       await signInWithGoogle();
     } catch (err: any) {
-      if (err.message === 'FIREBASE_CONFIG_REQUIRED') {
-        setFirebaseModalOpen(true);
-      } else if (err.code === 'auth/popup-closed-by-user') {
+      if (err.code === 'auth/popup-closed-by-user') {
         setError('Inicio de sesión cancelado.');
       } else {
         setError(err.message || 'Error con Google Auth');
@@ -76,10 +67,10 @@ export function LoginView() {
         <div className="flex flex-col items-center text-center mb-8">
           <Logo size={48} />
           <h2 className="font-bold text-xl text-slate-800 dark:text-white mt-3">
-            Bienvenido a Infinity
+            Infinity
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs">
-            Tu repositorio personal para organizar y explorar archivos alojados en Notion, YouTube, Drive y enlaces directos.
+            Tu nube personal unificada e inteligente.
           </p>
         </div>
 
@@ -102,7 +93,7 @@ export function LoginView() {
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
           </svg>
-          <span>Continuar con Google</span>
+          <span>{tab === 'signup' ? 'Registrarse con Google' : 'Continuar con Google'}</span>
         </button>
 
         <div className="relative my-5 text-center">
@@ -165,23 +156,7 @@ export function LoginView() {
             <ArrowRight size={15} />
           </button>
         </form>
-
-        {/* Firebase Config Trigger */}
-        <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-center">
-          <button
-            onClick={() => setFirebaseModalOpen(true)}
-            className="text-[11px] font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center gap-1.5 py-1 px-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          >
-            <Settings size={13} />
-            <span>Configurar credenciales de Firebase</span>
-          </button>
-        </div>
       </div>
-
-      <FirebaseSetupModal
-        isOpen={firebaseModalOpen}
-        onClose={() => setFirebaseModalOpen(false)}
-      />
     </div>
   );
 }
