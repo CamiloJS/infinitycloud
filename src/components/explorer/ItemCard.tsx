@@ -21,8 +21,10 @@ import {
   FileText as FileIcon,
   Archive as ArchiveIcon,
   Lock,
-  Sliders
+  Sliders,
+  Download
 } from 'lucide-react';
+import { canDownloadItem, downloadItem } from '@/lib/utils/download';
 
 interface ItemCardProps {
   item: InfinityItem;
@@ -258,6 +260,23 @@ export function ItemCard({ item, onOpen, onEdit, onMove, readOnly }: ItemCardPro
                       {copied ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
                       Copiar enlace
                     </button>
+                    {canDownloadItem(item) && (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setShowMenu(false);
+                          try {
+                            await downloadItem(item);
+                          } catch (err) {
+                            console.warn('Download error:', err);
+                          }
+                        }}
+                        className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-blue-600 dark:text-blue-400 font-medium"
+                      >
+                        <Download size={13} />
+                        Descargar archivo
+                      </button>
+                    )}
                     <a
                       href={item.url}
                       target="_blank"

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { InfinityItem, CategoryType } from '@/types';
 import { useItems } from '@/context/ItemsContext';
 import { hashItemPassword } from '@/lib/security/itemPassword';
-import { generateAutoVideoThumbnail } from '@/lib/utils/videoThumbnail';
+import { generateAutoVideoThumbnail, processUploadedThumbnail } from '@/lib/utils/videoThumbnail';
 import { 
   X, 
   Check, 
@@ -14,7 +14,10 @@ import {
   FileText, 
   Sparkles,
   Sliders,
-  ShieldCheck
+  ShieldCheck,
+  Upload,
+  Trash2,
+  Loader2
 } from 'lucide-react';
 
 interface EditItemModalProps {
@@ -41,6 +44,8 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
 
   const [saving, setSaving] = useState<boolean>(false);
   const [generatingThumb, setGeneratingThumb] = useState<boolean>(false);
+  const [uploadingThumb, setUploadingThumb] = useState<boolean>(false);
+  const [thumbError, setThumbError] = useState<string | null>(null);
 
   useEffect(() => {
     if (item && isOpen) {
@@ -53,19 +58,40 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
       setHasExistingPassword(Boolean(item.isProtected && item.passwordHash));
       setEnablePassword(Boolean(item.isProtected && item.passwordHash));
       setNewPassword('');
+      setThumbError(null);
       setActiveTab('info');
     }
   }, [item, isOpen]);
 
   if (!isOpen || !item) return null;
 
+  const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingThumb(true);
+    setThumbError(null);
+    try {
+      const dataUrl = await processUploadedThumbnail(file);
+      setThumbnailUrl(dataUrl);
+    } catch (err: any) {
+      setThumbError(err.message || 'Error al procesar la imagen');
+    } finally {
+      setUploadingThumb(false);
+      e.target.value = '';
+    }
+  };
+
   const handleAutoThumbnail = async () => {
     setGeneratingThumb(true);
+    setThumbError(null);
     try {
       if (item.category === 'videos') {
         const generated = await generateAutoVideoThumbnail(item.url);
         if (generated) {
           setThumbnailUrl(generated);
+        } else {
+          setThumbError('No se pudo capturar el fotograma automáticamente. Puedes subir una imagen.');
         }
       }
     } finally {
@@ -266,16 +292,53 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
 
           {activeTab === 'thumbnail' && (
             <div className="space-y-4 animate-in fade-in duration-150">
+              {/* Local Image File Upload Area */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-                  URL de Miniatura
+                  Subir imagen local
+                </label>
+                <label className="flex items-center gap-3 p-3.5 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 bg-slate-50/60 dark:bg-slate-950/60 cursor-pointer transition-all group">
+                  <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500 group-hover:scale-110 transition-transform shrink-0">
+                    {uploadingThumb ? (
+                      <Loader2 size={18} className="animate-spin text-blue-500" />
+                    ) : (
+                      <Upload size={18} />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                      {uploadingThumb ? 'Ajustando imagen a 16:9...' : 'Elegir imagen desde tu dispositivo'}
+                    </p>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      JPG, PNG, WebP — Recorte inteligente 16:9 sin franjas negras
+                    </p>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleThumbnailUpload}
+                    disabled={uploadingThumb}
+                    className="hidden"
+                  />
+                </label>
+                {thumbError && (
+                  <p className="mt-1.5 text-xs text-rose-500 font-medium">
+                    {thumbError}
+                  </p>
+                )}
+              </div>
+
+              {/* URL or Auto Capture Option */}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+                  O vincular por URL / Capturar de video
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="url"
                     value={thumbnailUrl}
                     onChange={(e) => setThumbnailUrl(e.target.value)}
-                    placeholder="https://... (enlace a imagen)"
+                    placeholder="https://... (enlace directo a imagen)"
                     className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-800 dark:text-white outline-none focus:border-blue-500"
                   />
                   {item.category === 'videos' && (
@@ -295,10 +358,24 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
 
               {/* 16:9 Clean Preview Area */}
               <div>
-                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                  Vista previa (Formato 16:9 sin franjas)
-                </span>
-                <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center shadow-inner">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Vista previa (Formato 16:9 sin franjas)
+                  </span>
+                  {thumbnailUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setThumbnailUrl('')}
+                      className="text-xs text-rose-500 hover:text-rose-600 flex items-center gap-1 font-medium transition-colors"
+                      title="Quitar miniatura"
+                    >
+                      <Trash2 size={12} />
+                      <span>Quitar miniatura</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center shadow-inner group">
                   {thumbnailUrl ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
@@ -315,7 +392,7 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
                   )}
                 </div>
                 <p className="text-[11px] text-slate-400 mt-2">
-                  Las miniaturas se adaptan automáticamente a 16:9 en las tarjetas para eliminar cualquier franja negra.
+                  Todas las miniaturas subidas se optimizan en formato 16:9 de alta definición para eliminar franjas negras.
                 </p>
               </div>
             </div>

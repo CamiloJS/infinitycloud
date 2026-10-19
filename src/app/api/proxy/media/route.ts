@@ -94,6 +94,9 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const isDownload = searchParams.get('download') === '1' || searchParams.get('download') === 'true';
+    const filenameParam = searchParams.get('filename');
+
     const resHeaders = new Headers();
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
     const contentLength = response.headers.get('content-length');
@@ -108,7 +111,16 @@ export async function GET(req: NextRequest) {
     resHeaders.set('Access-Control-Allow-Origin', '*');
     resHeaders.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     resHeaders.set('Access-Control-Allow-Headers', 'Range, Content-Type, Authorization');
-    resHeaders.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+    resHeaders.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Disposition');
+
+    if (isDownload) {
+      let downloadFilename = (filenameParam || 'archivo').replace(/["\r\n\\]/g, '_').trim();
+      if (!downloadFilename) downloadFilename = 'archivo';
+      resHeaders.set(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(downloadFilename)}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`
+      );
+    }
 
     return new NextResponse(response.body, {
       status: response.status,

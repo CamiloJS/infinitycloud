@@ -6,7 +6,8 @@ import { adapterRegistry } from '@/lib/adapters/registry';
 import { YouTubeAdapter } from '@/lib/adapters/youtube';
 import { VimeoAdapter } from '@/lib/adapters/vimeo';
 import { useItems } from '@/context/ItemsContext';
-import { drawCoverCrop } from '@/lib/utils/videoThumbnail';
+import { drawCoverCrop, processUploadedThumbnail } from '@/lib/utils/videoThumbnail';
+import { canDownloadItem, downloadItem } from '@/lib/utils/download';
 import { 
   X, 
   ExternalLink, 
@@ -25,7 +26,9 @@ import {
   CheckCircle2,
   Film,
   Play,
-  Loader2
+  Loader2,
+  Download,
+  Upload
 } from 'lucide-react';
 
 interface VideoViewerProps {
@@ -97,6 +100,9 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   const [linkVideoInput, setLinkVideoInput] = useState<string>('');
   const [isSavingVideoLink, setIsSavingVideoLink] = useState<boolean>(false);
   const [showLinkVideoModal, setShowLinkVideoModal] = useState<boolean>(false);
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
+  const [isUploadingThumb, setIsUploadingThumb] = useState<boolean>(false);
+  const [uploadThumbSuccess, setUploadThumbSuccess] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -392,6 +398,36 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     }
   };
 
+  const handleDownload = async () => {
+    if (!item || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      await downloadItem(item);
+    } catch (err) {
+      console.warn('Download error:', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleUploadCustomThumbnail = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !item || isUploadingThumb) return;
+
+    setIsUploadingThumb(true);
+    try {
+      const dataUrl = await processUploadedThumbnail(file);
+      await editItem(item.id, { thumbnailUrl: dataUrl });
+      setUploadThumbSuccess(true);
+      setTimeout(() => setUploadThumbSuccess(false), 3000);
+    } catch (err) {
+      console.warn('Upload custom thumbnail error:', err);
+    } finally {
+      setIsUploadingThumb(false);
+      e.target.value = '';
+    }
+  };
+
   const handleSelectOrLinkVideo = async (videoUrl: string, videoTitle?: string) => {
     if (!videoUrl.trim() || !item) return;
     setIsSavingVideoLink(true);
@@ -538,6 +574,18 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
       >
         {/* Minimalist Top Icons - ZERO text, strictly above video frame */}
         <div className="w-full flex items-center justify-end px-3 py-1.5 bg-slate-950 shrink-0 gap-2">
+          {canDownloadItem(item) && (
+            <button
+              onClick={handleDownload}
+              disabled={isDownloading}
+              className="p-2 rounded-xl bg-slate-900/90 hover:bg-blue-600/20 text-slate-300 hover:text-blue-400 transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center disabled:opacity-50"
+              title="Descargar archivo"
+              aria-label="Descargar archivo"
+            >
+              {isDownloading ? <Loader2 size={16} className="animate-spin text-blue-400" /> : <Download size={16} />}
+            </button>
+          )}
+
           {isNotion && (
             <button
               onClick={() => setShowLinkVideoModal(true)}
@@ -975,25 +1023,52 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
 
               {/* Snapshot Frame as Thumbnail (only when editable) */}
               {!readOnly && (
-                <button
-                  onClick={captureFrameAsThumbnail}
-                  disabled={isCapturingSnapshot}
-                  className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1.5 transition-all ${
-                    snapshotSuccess
-                      ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                      : 'bg-slate-800 border-slate-700/60 text-slate-300 hover:text-white disabled:opacity-60'
-                  }`}
-                  title="Capturar fotograma actual y usarlo como miniatura del video"
-                >
-                  {isCapturingSnapshot ? (
-                    <Loader2 size={13} className="animate-spin text-blue-400" />
-                  ) : snapshotSuccess ? (
-                    <Check size={13} />
-                  ) : (
-                    <Camera size={13} />
-                  )}
-                  <span>{snapshotMessage || (snapshotSuccess ? '¡Guardada!' : 'Capturar miniatura')}</span>
-                </button>
+                <>
+                  <button
+                    onClick={captureFrameAsThumbnail}
+                    disabled={isCapturingSnapshot}
+                    className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1.5 transition-all ${
+                      snapshotSuccess
+                        ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                        : 'bg-slate-800 border-slate-700/60 text-slate-300 hover:text-white disabled:opacity-60'
+                    }`}
+                    title="Capturar fotograma actual y usarlo como miniatura del video"
+                  >
+                    {isCapturingSnapshot ? (
+                      <Loader2 size={13} className="animate-spin text-blue-400" />
+                    ) : snapshotSuccess ? (
+                      <Check size={13} />
+                    ) : (
+                      <Camera size={13} />
+                    )}
+                    <span>{snapshotMessage || (snapshotSuccess ? '¡Guardada!' : 'Capturar miniatura')}</span>
+                  </button>
+
+                  <label
+                    className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+                      uploadThumbSuccess
+                        ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                        : 'bg-slate-800 border-slate-700/60 text-slate-300 hover:text-white'
+                    }`}
+                    title="Subir una imagen desde tu dispositivo como miniatura 16:9"
+                  >
+                    {isUploadingThumb ? (
+                      <Loader2 size={13} className="animate-spin text-blue-400" />
+                    ) : uploadThumbSuccess ? (
+                      <Check size={13} />
+                    ) : (
+                      <Upload size={13} />
+                    )}
+                    <span>{isUploadingThumb ? 'Procesando...' : uploadThumbSuccess ? '¡Guardada!' : 'Subir miniatura'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleUploadCustomThumbnail}
+                      disabled={isUploadingThumb}
+                      className="hidden"
+                    />
+                  </label>
+                </>
               )}
 
               {/* Picture in Picture */}

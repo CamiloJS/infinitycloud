@@ -4,8 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { useItems } from '@/context/ItemsContext';
 import { adapterRegistry } from '@/lib/adapters/registry';
 import { CategoryType, ProviderType } from '@/types';
-import { X, Link2, Check, Sparkles, Loader2, CheckCircle2, Film, Play } from 'lucide-react';
+import { X, Link2, Check, Sparkles, Loader2, CheckCircle2, Film, Play, Upload, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { isValidDirectVideoStream } from '@/components/viewers/VideoViewer';
+import { processUploadedThumbnail } from '@/lib/utils/videoThumbnail';
 
 interface AddItemModalProps {
   isOpen: boolean;
@@ -28,6 +29,9 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
   const [userChangedCategory, setUserChangedCategory] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [customThumbnailUrl, setCustomThumbnailUrl] = useState<string>('');
+  const [isUploadingThumb, setIsUploadingThumb] = useState<boolean>(false);
+  const [thumbError, setThumbError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -43,9 +47,29 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       setDirectNotionVideoUrl('');
       setIsSearchingNotionVideos(false);
       setUserChangedCategory(false);
+      setCustomThumbnailUrl('');
+      setIsUploadingThumb(false);
+      setThumbError(null);
       setError(null);
     }
   }, [isOpen]);
+
+  const handleThumbnailUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingThumb(true);
+    setThumbError(null);
+    try {
+      const dataUrl = await processUploadedThumbnail(file);
+      setCustomThumbnailUrl(dataUrl);
+    } catch (err: any) {
+      setThumbError(err.message || 'Error al procesar la imagen');
+    } finally {
+      setIsUploadingThumb(false);
+      e.target.value = '';
+    }
+  };
 
   // Real-time detection when URL changes
   useEffect(() => {
@@ -153,6 +177,10 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
         } else {
           customMeta.originalUrl = cleanUrl;
         }
+      }
+
+      if (customThumbnailUrl) {
+        customMeta.thumbnailUrl = customThumbnailUrl;
       }
 
       const finalCat = (customMeta.isNotionVideo || notionVideoDetected) ? 'videos' : (userChangedCategory ? category : undefined);
@@ -378,6 +406,66 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* Optional Custom 16:9 Thumbnail Upload */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Miniatura 16:9 (Opcional)
+              </label>
+              {customThumbnailUrl && (
+                <button
+                  type="button"
+                  onClick={() => setCustomThumbnailUrl('')}
+                  className="text-xs text-rose-500 hover:text-rose-600 flex items-center gap-1 font-medium transition-colors"
+                >
+                  <Trash2 size={12} />
+                  <span>Quitar</span>
+                </button>
+              )}
+            </div>
+
+            {customThumbnailUrl ? (
+              <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-inner">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={customThumbnailUrl}
+                  alt="Miniatura personalizada"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : (
+              <label className="flex items-center gap-3 p-3 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 bg-slate-50/60 dark:bg-slate-950/60 cursor-pointer transition-all group">
+                <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 group-hover:scale-110 transition-transform shrink-0">
+                  {isUploadingThumb ? (
+                    <Loader2 size={16} className="animate-spin text-blue-500" />
+                  ) : (
+                    <Upload size={16} />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {isUploadingThumb ? 'Procesando imagen...' : 'Subir imagen desde tu equipo'}
+                  </p>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    JPG, PNG, WebP — Ajustado en 16:9 sin franjas negras
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleThumbnailUpload}
+                  disabled={isUploadingThumb}
+                  className="hidden"
+                />
+              </label>
+            )}
+            {thumbError && (
+              <p className="mt-1 text-xs text-rose-500 font-medium">
+                {thumbError}
+              </p>
+            )}
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-3">

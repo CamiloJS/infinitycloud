@@ -124,9 +124,15 @@ export async function GET(req: NextRequest) {
       new URL(finalUrl);
 
       const shouldProxy = searchParams.get('proxy') === '1' || searchParams.get('proxy') === 'true';
-      if (shouldProxy) {
+      const isDownload = searchParams.get('download') === '1' || searchParams.get('download') === 'true';
+      const filename = searchParams.get('filename') || item?.name || 'archivo_notion';
+
+      if (isDownload || shouldProxy) {
         return NextResponse.redirect(
-          new URL(`/api/proxy/media?url=${encodeURIComponent(finalUrl)}`, req.url),
+          new URL(
+            `/api/proxy/media?url=${encodeURIComponent(finalUrl)}${isDownload ? `&download=1&filename=${encodeURIComponent(filename)}` : ''}`,
+            req.url
+          ),
           { status: 307 }
         );
       }

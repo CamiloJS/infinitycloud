@@ -13,8 +13,10 @@ import {
   ExternalLink, 
   Download,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Loader2
 } from 'lucide-react';
+import { canDownloadItem, downloadItem } from '@/lib/utils/download';
 
 interface PhotoViewerProps {
   item: InfinityItem | null;
@@ -27,6 +29,7 @@ interface PhotoViewerProps {
 export function PhotoViewer({ item, itemsList, onClose, onSelectNext, onSelectPrev }: PhotoViewerProps) {
   const [zoom, setZoom] = useState<number>(1);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -143,16 +146,26 @@ export function PhotoViewer({ item, itemsList, onClose, onSelectNext, onSelectPr
             <ExternalLink size={18} />
           </a>
 
-          <a
-            href={directUrl}
-            download={item.name}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
-            title="Descargar"
-          >
-            <Download size={18} />
-          </a>
+          {canDownloadItem(item) && (
+            <button
+              onClick={async () => {
+                if (isDownloading) return;
+                setIsDownloading(true);
+                try {
+                  await downloadItem(item);
+                } catch (err) {
+                  console.warn('Download error:', err);
+                } finally {
+                  setIsDownloading(false);
+                }
+              }}
+              disabled={isDownloading}
+              className="p-2 rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
+              title="Descargar archivo"
+            >
+              {isDownloading ? <Loader2 size={18} className="animate-spin text-white" /> : <Download size={18} />}
+            </button>
+          )}
 
           <button
             onClick={onClose}

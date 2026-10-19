@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { InfinityItem } from '@/types';
-import { X, ExternalLink, Download, Copy, Check, File, Globe, Calendar, Hash } from 'lucide-react';
+import { X, ExternalLink, Download, Copy, Check, File, Globe, Calendar, Hash, Loader2 } from 'lucide-react';
+import { canDownloadItem, downloadItem } from '@/lib/utils/download';
 
 interface OtherViewerProps {
   item: InfinityItem | null;
@@ -12,6 +13,7 @@ interface OtherViewerProps {
 
 export function OtherViewer({ item, onClose, onPlayVideo }: OtherViewerProps) {
   const [copied, setCopied] = useState<boolean>(false);
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
 
   React.useEffect(() => {
     if (!item) return;
@@ -132,14 +134,26 @@ export function OtherViewer({ item, onClose, onPlayVideo }: OtherViewerProps) {
           >
             <ExternalLink size={16} /> Abrir enlace original
           </a>
-          <a
-            href={item.url}
-            download={item.name}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Descargar"
-          >
-            <Download size={18} />
-          </a>
+          {canDownloadItem(item) && (
+            <button
+              onClick={async () => {
+                if (isDownloading) return;
+                setIsDownloading(true);
+                try {
+                  await downloadItem(item);
+                } catch (err) {
+                  console.warn('Download error:', err);
+                } finally {
+                  setIsDownloading(false);
+                }
+              }}
+              disabled={isDownloading}
+              className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center disabled:opacity-50"
+              title="Descargar archivo"
+            >
+              {isDownloading ? <Loader2 size={18} className="animate-spin text-blue-500" /> : <Download size={18} />}
+            </button>
+          )}
         </div>
       </div>
     </div>

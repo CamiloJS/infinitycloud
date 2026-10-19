@@ -12,8 +12,10 @@ import {
   Check, 
   Copy, 
   Maximize2, 
-  Minimize2 
+  Minimize2,
+  Loader2
 } from 'lucide-react';
+import { canDownloadItem, downloadItem } from '@/lib/utils/download';
 
 interface DocumentViewerProps {
   item: InfinityItem | null;
@@ -27,6 +29,7 @@ export function DocumentViewer({ item, onClose, onPlayVideo }: DocumentViewerPro
   const [loadingText, setLoadingText] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -212,16 +215,26 @@ export function DocumentViewer({ item, onClose, onPlayVideo }: DocumentViewerPro
               {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </button>
 
-            <a
-              href={directUrl}
-              download={item.name}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-              title="Descargar archivo"
-            >
-              <Download size={18} />
-            </a>
+            {canDownloadItem(item) && (
+              <button
+                onClick={async () => {
+                  if (isDownloading) return;
+                  setIsDownloading(true);
+                  try {
+                    await downloadItem(item);
+                  } catch (err) {
+                    console.warn('Download error:', err);
+                  } finally {
+                    setIsDownloading(false);
+                  }
+                }}
+                disabled={isDownloading}
+                className="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors disabled:opacity-50"
+                title="Descargar archivo"
+              >
+                {isDownloading ? <Loader2 size={18} className="animate-spin text-blue-500" /> : <Download size={18} />}
+              </button>
+            )}
 
             <a
               href={item.url}

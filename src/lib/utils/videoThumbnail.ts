@@ -1,15 +1,12 @@
-/**
- * Draws a video frame into a canvas with 16:9 aspect cover-cropping,
- * eliminating letterboxing/black bars and avoiding distortion.
- */
 export function drawCoverCrop(
   ctx: CanvasRenderingContext2D,
-  video: HTMLVideoElement,
+  video: HTMLVideoElement | HTMLImageElement,
   targetWidth = 640,
   targetHeight = 360
 ): void {
-  const vw = video.videoWidth || targetWidth;
-  const vh = video.videoHeight || targetHeight;
+  const isVideo = 'videoWidth' in video;
+  const vw = (isVideo ? video.videoWidth : video.naturalWidth || video.width) || targetWidth;
+  const vh = (isVideo ? video.videoHeight : video.naturalHeight || video.height) || targetHeight;
   const targetAspect = targetWidth / targetHeight; // 16:9 ≈ 1.777
   const videoAspect = vw / vh;
 
@@ -19,16 +16,58 @@ export function drawCoverCrop(
   let sHeight = vh;
 
   if (videoAspect > targetAspect) {
-    // Video is wider than 16:9 (e.g., 21:9 ultrawide) -> crop left & right
+    // Media is wider than 16:9 -> crop left & right
     sWidth = vh * targetAspect;
     sx = (vw - sWidth) / 2;
   } else if (videoAspect < targetAspect) {
-    // Video is narrower than 16:9 (e.g., 4:3 or 9:16 vertical) -> crop top & bottom
+    // Media is narrower than 16:9 -> crop top & bottom
     sHeight = vw / targetAspect;
     sy = (vh - sHeight) / 2;
   }
 
   ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
+}
+
+/**
+ * Reads an uploaded image File, converts it to 16:9 format with smart cover cropping
+ * to avoid letterboxing/distortion, and outputs a high-quality, lightweight Data URL.
+ */
+export async function processUploadedThumbnail(
+  file: File,
+  targetWidth = 640,
+  targetHeight = 360
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      return reject(new Error('El archivo seleccionado no es una imagen válida (debe ser JPG, PNG, WebP o similar).'));
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            return reject(new Error('No se pudo inicializar el lienzo para recortar la imagen.'));
+          }
+
+          drawCoverCrop(ctx, img, targetWidth, targetHeight);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          resolve(dataUrl);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = () => reject(new Error('No se pudo procesar la imagen seleccionada.'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error('Error al leer el archivo desde el dispositivo.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 /**
