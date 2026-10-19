@@ -131,8 +131,9 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
     collectionId?: string | null
   ): Promise<InfinityItem> => {
     const detected = await adapterRegistry.detect(url);
+    const isNotionVideo = Boolean(detected.metadata?.isNotionVideo || (detected.provider === 'notion' && detected.category === 'videos'));
     const finalName = customName?.trim() || detected.name;
-    const finalCategory = customCategory || detected.category;
+    const finalCategory = isNotionVideo ? 'videos' : (customCategory || detected.category);
     const finalUrl = (detected.metadata?.isNotionVideo && detected.metadata?.s3Url) 
       ? detected.metadata.s3Url 
       : url;

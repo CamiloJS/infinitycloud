@@ -95,11 +95,29 @@ export async function findServerItemById(itemId: string): Promise<InfinityItem |
     if (found) return found;
   }
 
+  // Check cached public shares in local store schema
+  if ((store as any).shares) {
+    for (const share of Object.values((store as any).shares) as any[]) {
+      const items = share?.securedItems || share?.items || [];
+      const found = items.find((i: any) => i.id === itemId);
+      if (found) return found;
+    }
+  }
+
   if (isFirebaseAdminConfigured && adminDb) {
     try {
       const snap = await adminDb.collectionGroup('items').where('id', '==', itemId).limit(1).get();
       if (!snap.empty) {
         return snap.docs[0].data() as InfinityItem;
+      }
+
+      // Check public_shares collection in Firestore
+      const shareSnap = await adminDb.collection('public_shares').get();
+      for (const d of shareSnap.docs) {
+        const data = d.data();
+        const items = data.securedItems || data.items || [];
+        const found = items.find((i: any) => i.id === itemId);
+        if (found) return found as InfinityItem;
       }
     } catch (err) {
       console.warn('Firebase Admin findServerItemById error:', err);

@@ -29,9 +29,11 @@ interface ItemCardProps {
   onOpen: (item: InfinityItem) => void;
   onEdit?: (item: InfinityItem) => void;
   onMove?: (item: InfinityItem) => void;
+  readOnly?: boolean;
 }
 
-export function ItemCard({ item, onOpen, onEdit, onMove }: ItemCardProps) {
+export function ItemCard({ item, onOpen, onEdit, onMove, readOnly }: ItemCardProps) {
+  const isReadOnly = readOnly ?? (!onEdit && !onMove);
   const { toggleFavorite, moveToTrash, restoreFromTrash, deletePermanently, collections } = useItems();
   const { playTrack, currentTrack, isPlaying } = usePlayer();
   const [showMenu, setShowMenu] = useState<boolean>(false);
@@ -116,8 +118,8 @@ export function ItemCard({ item, onOpen, onEdit, onMove }: ItemCardProps) {
           {item.category === 'others' && <ArchiveIcon size={13} />}
         </div>
 
-        {/* Favorite Button (only when not in trash) */}
-        {!item.isTrash && (
+        {/* Favorite Button (only when not in trash and editable) */}
+        {!item.isTrash && !isReadOnly && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -264,37 +266,47 @@ export function ItemCard({ item, onOpen, onEdit, onMove }: ItemCardProps) {
                     >
                       <ExternalLink size={13} /> Abrir original
                     </a>
-                    <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
-                    <button
-                      onClick={() => {
-                        setShowMenu(false);
-                        moveToTrash(item.id);
-                      }}
-                      className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600"
-                    >
-                      <Trash2 size={13} /> Mover a papelera
-                    </button>
+                    {!isReadOnly && (
+                      <>
+                        <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
+                        <button
+                          onClick={() => {
+                            setShowMenu(false);
+                            moveToTrash(item.id);
+                          }}
+                          className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600"
+                        >
+                          <Trash2 size={13} /> Mover a papelera
+                        </button>
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
-                    <button
-                      onClick={() => {
-                        setShowMenu(false);
-                        restoreFromTrash(item.id);
-                      }}
-                      className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-600"
-                    >
-                      <RotateCcw size={13} /> Restaurar
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowMenu(false);
-                        deletePermanently(item.id);
-                      }}
-                      className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600"
-                    >
-                      <Trash2 size={13} /> Eliminar definitivo
-                    </button>
+                    {!isReadOnly ? (
+                      <>
+                        <button
+                          onClick={() => {
+                            setShowMenu(false);
+                            restoreFromTrash(item.id);
+                          }}
+                          className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-600"
+                        >
+                          <RotateCcw size={13} /> Restaurar
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowMenu(false);
+                            deletePermanently(item.id);
+                          }}
+                          className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600"
+                        >
+                          <Trash2 size={13} /> Eliminar definitivo
+                        </button>
+                      </>
+                    ) : (
+                      <div className="px-3 py-1.5 text-slate-400 text-[11px]">En papelera</div>
+                    )}
                   </>
                 )}
               </div>

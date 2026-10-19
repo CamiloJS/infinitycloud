@@ -4,34 +4,107 @@ import { decryptSecret } from '@/lib/crypto/encryption';
 import { getSessionFromRequest } from '@/lib/auth/session';
 import { getServerUserSettings } from '@/lib/server/store';
 
-function extractNotionId(urlOrId: string): string | null {
+interface ExtractedNotionDetails {
+  pageId: string | null;
+  blockId: string | null;
+  isDirectVideoUrl: boolean;
+}
+
+function extractNotionDetails(urlOrId: string): ExtractedNotionDetails {
+  const clean = urlOrId.trim();
+  const lower = clean.toLowerCase();
+
+  const isVideoExt = (
+    lower.endsWith('.mp4') ||
+    lower.endsWith('.mov') ||
+    lower.endsWith('.webm') ||
+    lower.endsWith('.m4v') ||
+    lower.endsWith('.ogv')
+  );
+
+  const isDirectVideoUrl = isVideoExt || (
+    (lower.includes('amazonaws.com') || lower.includes('file.notion.so')) &&
+    (lower.includes('.mp4') || lower.includes('.mov') || lower.includes('.webm') || lower.includes('/video'))
+  );
+
+  let pageId: string | null = null;
+  let blockId: string | null = null;
+
   try {
-    const raw = urlOrId.trim();
-    // Check if directly a 32-char hex string
-    if (/^[0-9a-f]{32}$/i.test(raw)) {
-      return raw;
+    const parsed = new URL(clean);
+
+    // 1. Check query parameters (Notion database views use ?p=...)
+    const queryP = parsed.searchParams.get('p');
+    if (queryP && /^[0-9a-f]{32}$/i.test(queryP)) {
+      pageId = queryP;
     }
-    // Check if UUID with hyphens
-    const uuidMatch = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-    if (uuidMatch) {
-      return uuidMatch[0].replace(/-/g, '');
+
+    // 2. Check hash (Notion block links use #<block_id>)
+    if (parsed.hash) {
+      const hashClean = parsed.hash.replace(/^#/, '');
+      const hashMatch = hashClean.match(/[0-9a-f]{32}/i);
+      if (hashMatch) {
+        blockId = hashMatch[0];
+      }
     }
-    // Parse URL pathname
-    const parsed = new URL(raw);
-    const lastPart = parsed.pathname.split('/').filter(Boolean).pop() || '';
-    const match = lastPart.match(/[0-9a-f]{32}/i);
-    if (match) return match[0];
-    const generalMatch = raw.match(/[0-9a-f]{32}/i);
-    return generalMatch ? generalMatch[0] : null;
+
+    // 3. Check pathname
+    if (!pageId) {
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      for (let i = segments.length - 1; i >= 0; i--) {
+        const seg = segments[i];
+        const segMatch = seg.match(/[0-9a-f]{32}/i);
+        if (segMatch) {
+          pageId = segMatch[0];
+          break;
+        }
+      }
+    }
   } catch {
-    const match = urlOrId.match(/[0-9a-f]{32}/i);
-    return match ? match[0] : null;
+    // If not a full URL, attempt direct 32-hex match
+    const generalMatch = clean.match(/[0-9a-f]{32}/i);
+    if (generalMatch) {
+      pageId = generalMatch[0];
+    }
   }
+
+  // UUID with hyphens fallback
+  if (!pageId) {
+    const uuidMatch = clean.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    if (uuidMatch) {
+      pageId = uuidMatch[0].replace(/-/g, '');
+    }
+  }
+
+  return {
+    pageId,
+    blockId,
+    isDirectVideoUrl
+  };
 }
 
 function formatNotionUuid(clean32: string): string {
   if (clean32.length !== 32) return clean32;
   return `${clean32.slice(0, 8)}-${clean32.slice(8, 12)}-${clean32.slice(12, 16)}-${clean32.slice(16, 20)}-${clean32.slice(20)}`;
+}
+
+function isVideoUrl(url: string): boolean {
+  if (!url) return false;
+  const l = url.toLowerCase();
+  return (
+    l.includes('youtube.com/watch') ||
+    l.includes('youtube.com/embed') ||
+    l.includes('youtu.be/') ||
+    l.includes('vimeo.com/') ||
+    l.includes('loom.com/share') ||
+    l.includes('drive.google.com/file') ||
+    l.endsWith('.mp4') ||
+    l.endsWith('.mov') ||
+    l.endsWith('.webm') ||
+    l.endsWith('.m4v') ||
+    l.endsWith('.ogv') ||
+    ((l.includes('amazonaws.com') || l.includes('file.notion.so')) && (l.includes('.mp4') || l.includes('.mov') || l.includes('.webm')))
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -43,7 +116,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Se requiere una URL de Notion' }, { status: 400 });
     }
 
-    const notionId = extractNotionId(url);
+    const { pageId, blockId, isDirectVideoUrl } = extractNotionDetails(url);
+
+    // =========================================================================
+    // CASO DIRECTO: La URL ya es un video directo de Notion / S3
+    // =========================================================================
+    if (isDirectVideoUrl) {
+      let title = 'Video de Notion';
+      try {
+        const cleanName = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
+        if (cleanName && cleanName.length > 2) {
+          title = cleanName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+        }
+      } catch {
+        // fallback
+      }
+
+      return NextResponse.json({
+        success: true,
+        foundVideo: true,
+        video: {
+          url,
+          title,
+          caption: title,
+          isExpiringS3: url.includes('amazonaws.com') || url.includes('notion.so'),
+          sourceType: 'notion_block',
+          pageTitle: title,
+          pageDescription: 'Video extraído de Notion'
+        }
+      });
+    }
+
     let pageTitle = 'Página de Notion';
     let pageDescription = '';
     let coverUrl: string | undefined = undefined;
@@ -65,13 +168,13 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================================================================
-    // ESTRATEGIA 1: Notion Official API (si el usuario vinculó su Workspace)
+    // ESTRATEGIA 1: Notion Official API (si el usuario conectó su integración)
     // =========================================================================
-    if (notionClient && notionId) {
+    if (notionClient && pageId) {
       try {
-        const formattedId = formatNotionUuid(notionId);
+        const formattedId = formatNotionUuid(pageId);
         const page: any = await notionClient.pages.retrieve({ page_id: formattedId });
-        
+
         // Extract title
         if (page.properties) {
           for (const prop of Object.values(page.properties) as any[]) {
@@ -89,24 +192,26 @@ export async function POST(req: NextRequest) {
           coverUrl = page.cover.external.url;
         }
 
-        // Search children blocks for video
-        const blocksResponse: any = await notionClient.blocks.children.list({
-          block_id: formattedId,
-          page_size: 50
-        });
+        // Recursively inspect blocks for video
+        const scanBlocksRecursive = async (parentId: string, depth = 0): Promise<any | null> => {
+          if (depth > 3) return null;
+          const blocksRes: any = await notionClient!.blocks.children.list({
+            block_id: parentId,
+            page_size: 50
+          });
 
-        for (const block of blocksResponse.results) {
-          if (block.type === 'video') {
-            const videoContent = block.video;
-            let videoUrl = videoContent?.file?.url || videoContent?.external?.url;
-            const caption = videoContent?.caption?.[0]?.plain_text || pageTitle;
-            const isS3 = Boolean(videoContent?.file?.url);
+          for (const block of blocksRes.results) {
+            // Check for specific block if blockId was requested in anchor
+            const isTargetBlock = blockId && block.id.replace(/-/g, '') === blockId;
 
-            if (videoUrl) {
-              return NextResponse.json({
-                success: true,
-                foundVideo: true,
-                video: {
+            if (block.type === 'video') {
+              const videoContent = block.video;
+              const videoUrl = videoContent?.file?.url || videoContent?.external?.url;
+              const caption = videoContent?.caption?.[0]?.plain_text || pageTitle;
+              const isS3 = Boolean(videoContent?.file?.url);
+
+              if (videoUrl) {
+                return {
                   url: videoUrl,
                   title: caption || pageTitle,
                   caption,
@@ -118,22 +223,68 @@ export async function POST(req: NextRequest) {
                   sourceType: isS3 ? 'notion_block' : 'embed',
                   pageTitle,
                   pageDescription
-                }
-              });
+                };
+              }
+            } else if (block.type === 'embed' && block.embed?.url && isVideoUrl(block.embed.url)) {
+              return {
+                url: block.embed.url,
+                title: pageTitle,
+                caption: pageTitle,
+                coverUrl: coverUrl || undefined,
+                notionBlockId: block.id,
+                notionPageId: formattedId,
+                isExpiringS3: false,
+                sourceType: 'embed',
+                pageTitle,
+                pageDescription
+              };
+            } else if (block.type === 'file') {
+              const fileContent = block.file;
+              const fileUrl = fileContent?.file?.url || fileContent?.external?.url;
+              if (fileUrl && isVideoUrl(fileUrl)) {
+                return {
+                  url: fileUrl,
+                  title: fileContent?.caption?.[0]?.plain_text || pageTitle,
+                  caption: fileContent?.caption?.[0]?.plain_text || pageTitle,
+                  coverUrl: coverUrl || undefined,
+                  notionBlockId: block.id,
+                  notionPageId: formattedId,
+                  isExpiringS3: Boolean(fileContent?.file?.url),
+                  expiryTime: fileContent?.file?.expiry_time,
+                  sourceType: 'notion_block',
+                  pageTitle,
+                  pageDescription
+                };
+              }
+            }
+
+            if (block.has_children) {
+              const childVideo = await scanBlocksRecursive(block.id, depth + 1);
+              if (childVideo) return childVideo;
             }
           }
+          return null;
+        };
+
+        const foundOfficial = await scanBlocksRecursive(formattedId);
+        if (foundOfficial) {
+          return NextResponse.json({
+            success: true,
+            foundVideo: true,
+            video: foundOfficial
+          });
         }
       } catch (officialErr) {
-        console.warn('Official Notion API lookup failed, falling back to public extraction:', officialErr);
+        console.warn('Official Notion API lookup error, falling back to public extraction:', officialErr);
       }
     }
 
     // =========================================================================
     // ESTRATEGIA 2: Notion Public Chunk API (para páginas públicas o compartidas)
     // =========================================================================
-    if (notionId) {
+    if (pageId) {
       try {
-        const formattedId = formatNotionUuid(notionId);
+        const formattedId = formatNotionUuid(pageId);
         const chunkRes = await fetch('https://www.notion.so/api/v3/loadPageChunk', {
           method: 'POST',
           headers: {
@@ -142,7 +293,7 @@ export async function POST(req: NextRequest) {
           },
           body: JSON.stringify({
             pageId: formattedId,
-            limit: 60,
+            limit: 100,
             cursor: { stack: [] },
             chunkNumber: 0,
             verticalColumns: false
@@ -173,8 +324,11 @@ export async function POST(req: NextRequest) {
             const isFileWithVideo = val.type === 'file' && (
               val.properties?.source?.[0]?.[0]?.match(/\.(mp4|mov|webm|m4v)(\?.*)?$/i)
             );
+            const isEmbedWithVideo = (val.type === 'embed' || val.type === 'bookmark') && (
+              isVideoUrl(val.properties?.source?.[0]?.[0] || val.format?.display_source || '')
+            );
 
-            if (isVideoBlock || isFileWithVideo) {
+            if (isVideoBlock || isFileWithVideo || isEmbedWithVideo) {
               let rawSource = val.properties?.source?.[0]?.[0] || val.format?.display_source;
               const caption = val.properties?.caption?.[0]?.[0] || pageTitle;
               let finalVideoUrl = rawSource;
@@ -238,38 +392,149 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================================================================
-    // ESTRATEGIA 3: Fallback por HTML / Scraping
+    // ESTRATEGIA 3: Fallback por HTML / Scraping y Análisis de NEXT_DATA
     // =========================================================================
     try {
       const htmlRes = await fetch(url, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
+        },
+        redirect: 'follow'
       });
 
       if (htmlRes.ok) {
         const html = await htmlRes.text();
 
-        // Extract title
+        // 1. Extract title
         const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
         if (titleMatch && titleMatch[1]) {
           pageTitle = titleMatch[1].replace(/\s*\|\s*Notion.*$/i, '').trim();
         }
 
-        // Search for video tags or mp4 links in HTML
-        const videoMatch = html.match(/<video[^>]+src=["']([^"']+)["']/i) ||
-                           html.match(/https?:\/\/[^"'\s]+\.(?:mp4|webm|mov)(?:\?[^"'\s]*)?/i);
+        // 2. Extract cover / og:image
+        const ogImageMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
+        if (ogImageMatch && ogImageMatch[1]) {
+          coverUrl = ogImageMatch[1];
+        }
 
-        if (videoMatch && videoMatch[1]) {
-          const videoUrl = videoMatch[1] || videoMatch[0];
+        // 3. Check for Next.js embedded data (__NEXT_DATA__)
+        const nextDataMatch = html.match(/<script\s+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+        if (nextDataMatch && nextDataMatch[1]) {
+          try {
+            const nextJson = JSON.parse(nextDataMatch[1]);
+            const blocks = nextJson?.props?.pageProps?.recordMap?.block || {};
+
+            for (const [bId, bVal] of Object.entries(blocks) as [string, any][]) {
+              const val = bVal?.value;
+              if (!val) continue;
+
+              const isVideo = val.type === 'video' ||
+                (val.type === 'file' && val.properties?.source?.[0]?.[0]?.match(/\.(mp4|mov|webm|m4v)/i)) ||
+                ((val.type === 'embed' || val.type === 'bookmark') && isVideoUrl(val.properties?.source?.[0]?.[0] || ''));
+
+              if (isVideo) {
+                const videoSrc = val.properties?.source?.[0]?.[0] || val.format?.display_source;
+                const caption = val.properties?.caption?.[0]?.[0] || pageTitle;
+
+                if (videoSrc) {
+                  return NextResponse.json({
+                    success: true,
+                    foundVideo: true,
+                    video: {
+                      url: videoSrc,
+                      title: caption || pageTitle,
+                      caption,
+                      coverUrl: coverUrl || undefined,
+                      notionBlockId: bId,
+                      notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+                      isExpiringS3: videoSrc.includes('amazonaws.com') || videoSrc.includes('notion.so'),
+                      sourceType: 'notion_block',
+                      pageTitle,
+                      pageDescription
+                    }
+                  });
+                }
+              }
+            }
+          } catch {
+            // ignore JSON parse error
+          }
+        }
+
+        // 4. Check for direct S3 / Notion video links in HTML
+        const s3VideoMatch = html.match(/https?:\/\/(?:prod-files-secure\.s3\.us-west-2\.amazonaws\.com|file\.notion\.so\/f\/f\/)[^"'\s<>]+\.(?:mp4|webm|mov|m4v)(?:\?[^"'\s<>]*)?/i);
+        if (s3VideoMatch && s3VideoMatch[0]) {
+          return NextResponse.json({
+            success: true,
+            foundVideo: true,
+            video: {
+              url: s3VideoMatch[0],
+              title: pageTitle,
+              caption: pageTitle,
+              coverUrl,
+              notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+              isExpiringS3: true,
+              sourceType: 'notion_block',
+              pageTitle,
+              pageDescription
+            }
+          });
+        }
+
+        // 5. Check for embedded YouTube / Vimeo in Notion page HTML
+        const ytMatch = html.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)[a-zA-Z0-9_-]{11}/i);
+        if (ytMatch && ytMatch[0]) {
+          return NextResponse.json({
+            success: true,
+            foundVideo: true,
+            video: {
+              url: ytMatch[0],
+              title: pageTitle,
+              caption: pageTitle,
+              coverUrl,
+              notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+              isExpiringS3: false,
+              sourceType: 'youtube',
+              pageTitle,
+              pageDescription
+            }
+          });
+        }
+
+        const vimeoMatch = html.match(/https?:\/\/(?:player\.)?vimeo\.com\/(?:video\/)?\d+/i);
+        if (vimeoMatch && vimeoMatch[0]) {
+          return NextResponse.json({
+            success: true,
+            foundVideo: true,
+            video: {
+              url: vimeoMatch[0],
+              title: pageTitle,
+              caption: pageTitle,
+              coverUrl,
+              notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+              isExpiringS3: false,
+              sourceType: 'embed',
+              pageTitle,
+              pageDescription
+            }
+          });
+        }
+
+        // 6. Generic HTML video tags or direct MP4 match
+        const genericVideoMatch = html.match(/<video[^>]+src=["']([^"']+)["']/i) ||
+                                  html.match(/https?:\/\/[^"'\s<>]+\.(?:mp4|webm|mov|m4v)(?:\?[^"'\s<>]*)?/i);
+
+        if (genericVideoMatch) {
+          const videoUrl = genericVideoMatch[1] || genericVideoMatch[0];
           return NextResponse.json({
             success: true,
             foundVideo: true,
             video: {
               url: videoUrl,
               title: pageTitle,
+              caption: pageTitle,
               coverUrl,
-              notionPageId: notionId ? formatNotionUuid(notionId) : undefined,
+              notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
               isExpiringS3: videoUrl.includes('amazonaws.com') || videoUrl.includes('notion.so'),
               sourceType: 'notion_block',
               pageTitle,
@@ -282,7 +547,7 @@ export async function POST(req: NextRequest) {
       console.warn('HTML scraping fallback error:', scrapeErr);
     }
 
-    // No video found on the page
+    // No video found on this page
     return NextResponse.json({
       success: true,
       foundVideo: false,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isSafeNotionMediaUrl } from '@/lib/security/ssrf';
+import { isSafeNotionMediaUrl, isSafePublicMediaUrl } from '@/lib/security/ssrf';
 import { requireServerAuth } from '@/lib/auth/session';
 
 export async function OPTIONS() {
@@ -32,14 +32,14 @@ export async function GET(req: NextRequest) {
       if (!authCheck.authorized) {
         return authCheck.response;
       }
-    }
 
-    // SSRF verification on incoming URL
-    if (!isSafeNotionMediaUrl(targetUrl)) {
-      return NextResponse.json(
-        { error: 'Destino no permitido por la política de seguridad SSRF.' },
-        { status: 403 }
-      );
+      // SSRF verification for general media URLs
+      if (!isSafePublicMediaUrl(targetUrl)) {
+        return NextResponse.json(
+          { error: 'Destino no permitido por la política de seguridad SSRF.' },
+          { status: 403 }
+        );
+      }
     }
 
     const rangeHeader = req.headers.get('range');
@@ -67,8 +67,12 @@ export async function GET(req: NextRequest) {
         if (!location) break;
 
         const resolvedLocation = new URL(location, currentUrl).toString();
-        // Check redirected target against SSRF whitelist
-        if (!isSafeNotionMediaUrl(resolvedLocation)) {
+        // Check redirected target against SSRF policy
+        const isRedirectAllowed = isSafeNotion
+          ? isSafeNotionMediaUrl(resolvedLocation)
+          : isSafePublicMediaUrl(resolvedLocation);
+
+        if (!isRedirectAllowed) {
           return NextResponse.json(
             { error: 'Redirección rechazada: El destino remoto no está en la lista autorizada.' },
             { status: 403 }

@@ -7,10 +7,43 @@ import { X, ExternalLink, Download, Copy, Check, File, Globe, Calendar, Hash } f
 interface OtherViewerProps {
   item: InfinityItem | null;
   onClose: () => void;
+  onPlayVideo?: (item: InfinityItem) => void;
 }
 
-export function OtherViewer({ item, onClose }: OtherViewerProps) {
+export function OtherViewer({ item, onClose, onPlayVideo }: OtherViewerProps) {
   const [copied, setCopied] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    if (!item) return;
+    if (item.provider === 'notion' || item.url.includes('notion.so') || item.url.includes('notion.site')) {
+      fetch('/api/notion/extract-page', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: item.metadata?.originalUrl || item.url })
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.foundVideo && data.video && onPlayVideo) {
+            const videoItem: InfinityItem = {
+              ...item,
+              category: 'videos',
+              name: data.video.title || item.name,
+              thumbnailUrl: data.video.coverUrl || item.thumbnailUrl,
+              metadata: {
+                ...item.metadata,
+                isNotionVideo: true,
+                s3Url: data.video.url,
+                notionBlockId: data.video.notionBlockId,
+                notionPageId: data.video.notionPageId,
+                originalUrl: item.metadata?.originalUrl || item.url
+              }
+            };
+            onPlayVideo(videoItem);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [item?.id]);
 
   if (!item) return null;
 

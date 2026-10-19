@@ -48,7 +48,8 @@ export default function HomePage() {
     setActiveCollectionId,
     setActiveView,
     isItemUnlocked,
-    unlockItem
+    unlockItem,
+    editItem
   } = useItems();
   const { playTrack } = usePlayer();
 
@@ -91,15 +92,70 @@ export default function HomePage() {
   // Active photos list for navigation in lightbox
   const photosList = filteredItems.filter(i => i.category === 'photos');
 
-  const openActualItem = (item: InfinityItem) => {
+  const openActualItem = async (item: InfinityItem) => {
     if (item.category === 'photos') {
       setActivePhoto(item);
-    } else if (item.category === 'videos') {
-      setActiveVideo(item);
-    } else if (item.category === 'music') {
-      // Play audio right away
+      return;
+    }
+    if (item.category === 'music') {
       playTrack(item, filteredItems.filter(i => i.category === 'music'));
-    } else if (item.category === 'documents') {
+      return;
+    }
+    if (item.category === 'videos' || item.metadata?.isNotionVideo) {
+      setActiveVideo(item);
+      return;
+    }
+
+    // Check if this item is a link to Notion
+    const isNotion = item.provider === 'notion' ||
+      item.url.includes('notion.so') ||
+      item.url.includes('notion.site');
+
+    if (isNotion) {
+      try {
+        const res = await fetch('/api/notion/extract-page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: item.metadata?.originalUrl || item.url })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.foundVideo && data.video) {
+            const videoItem: InfinityItem = {
+              ...item,
+              category: 'videos',
+              name: data.video.title || item.name,
+              thumbnailUrl: data.video.coverUrl || item.thumbnailUrl,
+              metadata: {
+                ...item.metadata,
+                isNotionVideo: true,
+                s3Url: data.video.url,
+                notionBlockId: data.video.notionBlockId,
+                notionPageId: data.video.notionPageId,
+                originalUrl: item.metadata?.originalUrl || item.url,
+                sourceType: data.video.sourceType
+              }
+            };
+
+            // Update item in background store
+            editItem(item.id, {
+              category: 'videos',
+              name: videoItem.name,
+              thumbnailUrl: videoItem.thumbnailUrl,
+              metadata: videoItem.metadata
+            }).catch(() => {});
+
+            // Show ONLY the video!
+            setActiveVideo(videoItem);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Error checking Notion video on open:', err);
+      }
+    }
+
+    if (item.category === 'documents') {
       setActiveDoc(item);
     } else {
       setActiveOther(item);
@@ -274,6 +330,12 @@ export default function HomePage() {
                     <img
                       src={item.thumbnailUrl}
                       alt={item.name}
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (target.src.includes('maxresdefault.jpg')) {
+                          target.src = target.src.replace('maxresdefault.jpg', 'mqdefault.jpg');
+                        }
+                      }}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-2.5">
@@ -341,11 +403,19 @@ export default function HomePage() {
       <DocumentViewer
         item={activeDoc}
         onClose={() => setActiveDoc(null)}
+        onPlayVideo={(videoItem) => {
+          setActiveDoc(null);
+          setActiveVideo(videoItem);
+        }}
       />
 
       <OtherViewer
         item={activeOther}
         onClose={() => setActiveOther(null)}
+        onPlayVideo={(videoItem) => {
+          setActiveOther(null);
+          setActiveVideo(videoItem);
+        }}
       />
 
       {/* Action Modals */}

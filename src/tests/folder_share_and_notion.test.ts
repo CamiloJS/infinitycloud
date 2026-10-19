@@ -167,4 +167,43 @@ describe('Folder Sharing and Notion Video Extraction', () => {
     const directUrl = adapter.getDirectUrl(dummyItem);
     expect(directUrl).toBe('/api/notion/resolve?itemId=item_notion_vid_123');
   });
+
+  it('NotionAdapter generates clean embed URL for embedded YouTube videos extracted from Notion page', async () => {
+    const adapter = new NotionAdapter();
+    const notionItemWithYoutube: InfinityItem = {
+      id: 'notion_yt_1',
+      userId: 'user_notion_2',
+      name: 'Video en Notion',
+      url: 'https://notion.so/my-page-1234567890abcdef1234567890abcdef',
+      provider: 'notion',
+      category: 'videos',
+      isFavorite: false,
+      isTrash: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      metadata: {
+        isNotionVideo: true,
+        s3Url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+      }
+    };
+
+    const embedUrl = adapter.getEmbedUrl(notionItemWithYoutube);
+    expect(embedUrl).toBe('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&autoplay=1&modestbranding=1&playsinline=1&iv_load_policy=3');
+  });
+
+  it('NotionAdapter extracts clean Notion IDs from ?p= query parameters and block hash anchors', () => {
+    const adapter = new NotionAdapter();
+
+    // Database view query parameter
+    const dbViewUrl = 'https://www.notion.so/workspace/DatabaseName?p=abcdef1234567890abcdef1234567890&pm=s';
+    expect(adapter.extractPageOrBlockId(dbViewUrl)).toBe('abcdef1234567890abcdef1234567890');
+
+    // Block hash link
+    const blockLinkUrl = 'https://notion.site/Page-Title#1234567890abcdef1234567890abcdef';
+    expect(adapter.extractPageOrBlockId(blockLinkUrl)).toBe('1234567890abcdef1234567890abcdef');
+
+    // UUID with hyphens
+    const uuidUrl = 'https://notion.so/12345678-90ab-cdef-1234-567890abcdef';
+    expect(adapter.extractPageOrBlockId(uuidUrl)).toBe('1234567890abcdef1234567890abcdef');
+  });
 });

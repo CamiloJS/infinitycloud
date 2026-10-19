@@ -212,5 +212,123 @@ describe('Bugfixes and Edge Cases Audit', () => {
       expect(found?.name).toBe('Notion Video Test');
       expect(found?.metadata?.notionBlockId).toBe('block_999_xyz');
     });
+
+    it('finds items contained within cached public shares', async () => {
+      const shareItemId = 'item_inside_public_share_456';
+      // Simulate cached share in local store
+      const fs = await import('fs');
+      const path = await import('path');
+      const storePath = path.join(process.cwd(), '.server_data.json');
+      let currentData: any = { settings: {}, items: {}, collections: {} };
+      try {
+        if (fs.existsSync(storePath)) {
+          currentData = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+        }
+      } catch {}
+
+      currentData.shares = {
+        'share_coll_789': {
+          id: 'share_coll_789',
+          name: 'Shared Folder',
+          items: [
+            {
+              id: shareItemId,
+              name: 'Video Inside Share',
+              url: 'https://prod-files-secure.s3.us-west-2.amazonaws.com/share.mp4',
+              provider: 'notion',
+              category: 'videos'
+            }
+          ]
+        }
+      };
+      fs.writeFileSync(storePath, JSON.stringify(currentData, null, 2), 'utf-8');
+
+      const found = await findServerItemById(shareItemId);
+      expect(found).not.toBeNull();
+      expect(found?.name).toBe('Video Inside Share');
+    });
+  });
+
+  describe('SSRF Public Media Validation (isSafePublicMediaUrl)', () => {
+    it('allows valid public HTTPS and HTTP media endpoints', async () => {
+      const { isSafePublicMediaUrl } = await import('@/lib/security/ssrf');
+      expect(isSafePublicMediaUrl('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4')).toBe(true);
+      expect(isSafePublicMediaUrl('https://cdn.example.com/videos/clip.webm')).toBe(true);
+      expect(isSafePublicMediaUrl('http://public-media-server.org/track.mp3')).toBe(true);
+    });
+
+    it('blocks private, loopback, and cloud metadata destinations', async () => {
+      const { isSafePublicMediaUrl } = await import('@/lib/security/ssrf');
+      // Loopback
+      expect(isSafePublicMediaUrl('http://127.0.0.1:8000/video.mp4')).toBe(false);
+      expect(isSafePublicMediaUrl('http://localhost:3000/api/secret')).toBe(false);
+      expect(isSafePublicMediaUrl('http://app.localhost/video.mp4')).toBe(false);
+      // AWS / Cloud metadata
+      expect(isSafePublicMediaUrl('http://169.254.169.254/latest/meta-data')).toBe(false);
+      // RFC1918 Private ranges
+      expect(isSafePublicMediaUrl('https://10.0.0.1/stream.mp4')).toBe(false);
+      expect(isSafePublicMediaUrl('https://192.168.1.100/stream.mp4')).toBe(false);
+      expect(isSafePublicMediaUrl('https://172.20.0.5/stream.mp4')).toBe(false);
+      // Non-HTTP schemes
+      expect(isSafePublicMediaUrl('ftp://example.com/video.mp4')).toBe(false);
+      expect(isSafePublicMediaUrl('javascript:alert(1)')).toBe(false);
+      expect(isSafePublicMediaUrl('data:text/plain;base64,AAAA')).toBe(false);
+      expect(isSafePublicMediaUrl('not-a-url')).toBe(false);
+    });
+  });
+
+  describe('Notion Resolve Proxy Redirection', () => {
+    it('redirects to /api/proxy/media when proxy=1 query param is provided', async () => {
+      const { GET } = await import('@/app/api/notion/resolve/route');
+      const { NextRequest } = await import('next/server');
+
+      const s3Url = 'https://prod-files-secure.s3.us-west-2.amazonaws.com/test-bucket/video.mp4';
+      const req = new NextRequest(
+        `http://localhost:3000/api/notion/resolve?url=${encodeURIComponent(s3Url)}&proxy=1`
+      );
+
+      const res = await GET(req);
+      expect(res.status).toBe(307);
+      const location = res.headers.get('location');
+      expect(location).toContain('/api/proxy/media?url=');
+      expect(location).toContain(encodeURIComponent(s3Url));
+    });
+
+    it('falls back to item.metadata.s3Url when item.url is a Notion page URL', async () => {
+      const userId = 'user_s3_fallback_test';
+      const s3VideoUrl = 'https://prod-files-secure.s3.us-west-2.amazonaws.com/my-workspace/video-file.mp4';
+      const pageUrl = 'https://www.notion.so/my-workspace/Video-Page-1234567890abcdef1234567890abcdef';
+
+      const item: InfinityItem = {
+        id: 'item_notion_page_with_video',
+        userId,
+        name: 'Page with Video',
+        url: pageUrl,
+        provider: 'notion',
+        category: 'videos',
+        isFavorite: false,
+        isTrash: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        metadata: {
+          s3Url: s3VideoUrl,
+          isNotionVideo: true
+        }
+      };
+
+      await saveServerItem(userId, item);
+
+      const { GET } = await import('@/app/api/notion/resolve/route');
+      const { NextRequest } = await import('next/server');
+
+      const req = new NextRequest(
+        `http://localhost:3000/api/notion/resolve?itemId=${item.id}`
+      );
+
+      const res = await GET(req);
+      expect(res.status).toBe(307);
+      const location = res.headers.get('location');
+      expect(location).toBe(s3VideoUrl);
+    });
   });
 });

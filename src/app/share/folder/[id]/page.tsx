@@ -117,19 +117,64 @@ function SharedFolderContent() {
     }
   };
 
-  const openActualItem = (item: InfinityItem) => {
+  const openActualItem = async (item: InfinityItem) => {
     if (item.category === 'photos') {
       setActivePhoto(item);
-    } else if (item.category === 'videos') {
-      setActiveVideo(item);
-    } else if (item.category === 'music') {
+      return;
+    }
+    if (item.category === 'music') {
       if (playTrack) {
         const musicItems = (folderData?.items || []).filter(i => i.category === 'music');
         playTrack(item, musicItems);
       } else {
         window.open(item.url, '_blank');
       }
-    } else if (item.category === 'documents') {
+      return;
+    }
+    if (item.category === 'videos' || item.metadata?.isNotionVideo) {
+      setActiveVideo(item);
+      return;
+    }
+
+    const isNotion = item.provider === 'notion' ||
+      item.url.includes('notion.so') ||
+      item.url.includes('notion.site');
+
+    if (isNotion) {
+      try {
+        const res = await fetch('/api/notion/extract-page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: item.metadata?.originalUrl || item.url })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.foundVideo && data.video) {
+            const videoItem: InfinityItem = {
+              ...item,
+              category: 'videos',
+              name: data.video.title || item.name,
+              thumbnailUrl: data.video.coverUrl || item.thumbnailUrl,
+              metadata: {
+                ...item.metadata,
+                isNotionVideo: true,
+                s3Url: data.video.url,
+                notionBlockId: data.video.notionBlockId,
+                notionPageId: data.video.notionPageId,
+                originalUrl: item.metadata?.originalUrl || item.url,
+                sourceType: data.video.sourceType
+              }
+            };
+            setActiveVideo(videoItem);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Error checking Notion video in shared folder:', err);
+      }
+    }
+
+    if (item.category === 'documents') {
       setActiveDoc(item);
     } else {
       setActiveOther(item);
@@ -415,6 +460,7 @@ function SharedFolderContent() {
                 key={item.id}
                 item={item}
                 onOpen={handleItemClick}
+                readOnly={true}
               />
             ))}
           </div>
@@ -425,6 +471,7 @@ function SharedFolderContent() {
                 key={item.id}
                 item={item}
                 onOpen={handleItemClick}
+                readOnly={true}
               />
             ))}
           </div>
@@ -443,6 +490,7 @@ function SharedFolderContent() {
       <VideoViewer
         item={activeVideo}
         onClose={() => setActiveVideo(null)}
+        readOnly={true}
       />
 
       <DocumentViewer

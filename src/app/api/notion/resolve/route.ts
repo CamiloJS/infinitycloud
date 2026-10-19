@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       item = await findServerItemById(itemId);
     }
 
-    let targetUrl = item?.url || directUrl || '';
+    let targetUrl = item?.metadata?.s3Url || item?.url || directUrl || '';
     const blockId = item?.metadata?.notionBlockId || directBlockId;
     const pageId = item?.metadata?.notionPageId || directPageId;
 
@@ -122,6 +122,15 @@ export async function GET(req: NextRequest) {
 
     try {
       new URL(finalUrl);
+
+      const shouldProxy = searchParams.get('proxy') === '1' || searchParams.get('proxy') === 'true';
+      if (shouldProxy) {
+        return NextResponse.redirect(
+          new URL(`/api/proxy/media?url=${encodeURIComponent(finalUrl)}`, req.url),
+          { status: 307 }
+        );
+      }
+
       return NextResponse.redirect(finalUrl, { status: 307 });
     } catch {
       return NextResponse.json({ error: 'URL resuelta no válida' }, { status: 400 });

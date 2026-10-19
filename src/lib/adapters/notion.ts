@@ -1,5 +1,8 @@
 import { DetectedMetadata, InfinityItem } from '@/types';
 import { ProviderAdapter } from './types';
+import { YouTubeAdapter } from './youtube';
+import { VimeoAdapter } from './vimeo';
+import { DriveAdapter } from './drive';
 
 export class NotionAdapter implements ProviderAdapter {
   id = 'notion' as const;
@@ -34,12 +37,22 @@ export class NotionAdapter implements ProviderAdapter {
   extractPageOrBlockId(urlString: string): string | null {
     try {
       const url = new URL(urlString);
-      // Clean query and hash
-      const pathname = url.pathname;
-      const match = pathname.match(/[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-      return match ? match[0] : null;
+      // Query param (?p=...)
+      const p = url.searchParams.get('p');
+      if (p && /^[0-9a-f]{32}$/i.test(p)) {
+        return p;
+      }
+      // Hash (#...)
+      if (url.hash) {
+        const hashMatch = url.hash.replace(/^#/, '').match(/[0-9a-f]{32}/i);
+        if (hashMatch) return hashMatch[0];
+      }
+      // Pathname
+      const match = url.pathname.match(/[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      return match ? match[0].replace(/-/g, '') : null;
     } catch {
-      return null;
+      const match = urlString.match(/[0-9a-f]{32}/i);
+      return match ? match[0] : null;
     }
   }
 
@@ -70,8 +83,8 @@ export class NotionAdapter implements ProviderAdapter {
       // ignore
     }
 
-    // Client-side extraction: if it's a Notion page, attempt to auto-extract video from page
-    if (typeof window !== 'undefined' && (urlString.includes('notion.so') || urlString.includes('notion.site'))) {
+    // Client-side extraction: if it's a Notion page or Notion file, attempt to auto-extract video from page
+    if (typeof window !== 'undefined') {
       try {
         const res = await fetch('/api/notion/extract-page', {
           method: 'POST',
@@ -94,7 +107,8 @@ export class NotionAdapter implements ProviderAdapter {
                 extractedFromPage: true,
                 isNotionVideo: true,
                 s3Url: data.video.url,
-                expiryTime: data.video.expiryTime
+                expiryTime: data.video.expiryTime,
+                sourceType: data.video.sourceType
               }
             };
           } else if (data.pageTitle) {
@@ -118,8 +132,26 @@ export class NotionAdapter implements ProviderAdapter {
     };
   }
 
+  getEmbedUrl(item: InfinityItem): string | null {
+    const rawUrl = item.metadata?.s3Url || item.url;
+    if (!rawUrl) return null;
+    if (rawUrl.includes('youtube.com') || rawUrl.includes('youtu.be')) {
+      const yt = new YouTubeAdapter();
+      return yt.getEmbedUrl({ ...item, url: rawUrl });
+    }
+    if (rawUrl.includes('vimeo.com')) {
+      const vimeo = new VimeoAdapter();
+      return vimeo.getEmbedUrl({ ...item, url: rawUrl });
+    }
+    if (rawUrl.includes('drive.google.com')) {
+      const drive = new DriveAdapter();
+      return drive.getEmbedUrl({ ...item, url: rawUrl });
+    }
+    return null;
+  }
+
   getDirectUrl(item: InfinityItem): string {
-    // If it's a Notion hosted file with signed URL, we route through our secure refresh proxy
+    // If it's a Notion hosted file with signed URL, route through secure refresh proxy
     if (item.metadata?.notionBlockId || item.metadata?.notionPageId || item.metadata?.isNotionVideo) {
       return `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}`;
     }

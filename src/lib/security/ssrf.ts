@@ -77,3 +77,40 @@ export function isSafeNotionMediaUrl(urlString: string): boolean {
     return false;
   }
 }
+
+/**
+ * Validates if an external URL is a safe public HTTP(S) endpoint (prevents SSRF to internal networks)
+ */
+export function isSafePublicMediaUrl(urlString: string): boolean {
+  try {
+    const url = new URL(urlString);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return false;
+    }
+
+    const hostname = url.hostname.toLowerCase();
+    if (!hostname) return false;
+
+    // Block localhost and common local domain patterns
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname.endsWith('.local') ||
+      hostname.endsWith('.internal') ||
+      hostname.endsWith('.onion')
+    ) {
+      return false;
+    }
+
+    // Direct IP address: ensure it is not private/loopback/cloud metadata
+    if (net.isIP(hostname)) {
+      if (isPrivateIp(hostname)) {
+        return false;
+      }
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -20,6 +20,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
   const [detectedProvider, setDetectedProvider] = useState<ProviderType | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [notionVideoDetected, setNotionVideoDetected] = useState<boolean>(false);
+  const [userChangedCategory, setUserChangedCategory] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +33,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       setDetectedProvider(null);
       setIsAnalyzing(false);
       setNotionVideoDetected(false);
+      setUserChangedCategory(false);
       setError(null);
     }
   }, [isOpen]);
@@ -52,14 +54,17 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       try {
         const detected = await adapterRegistry.detect(trimmed);
         setDetectedProvider(detected.provider);
-        setCategory(detected.category);
-        if (!name.trim() || name === 'Video de YouTube' || name.startsWith('Video (') || name === 'Recurso de Notion' || name === 'Página de Notion') {
-          setName(detected.name);
-        }
         if (detected.metadata?.isNotionVideo) {
           setNotionVideoDetected(true);
+          setCategory('videos');
         } else {
           setNotionVideoDetected(false);
+          if (!userChangedCategory) {
+            setCategory(detected.category);
+          }
+        }
+        if (!name.trim() || name === 'Video de YouTube' || name.startsWith('Video (') || name === 'Recurso de Notion' || name === 'Página de Notion') {
+          setName(detected.name);
         }
       } catch {
         // ignore
@@ -69,7 +74,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [url]);
+  }, [url, userChangedCategory, name]);
 
   if (!isOpen) return null;
 
@@ -84,7 +89,13 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
     setSaving(true);
     setError(null);
     try {
-      await addItemByUrl(cleanUrl, name.trim() || undefined, category, collectionId || null);
+      const isNotionVideo = notionVideoDetected || category === 'videos';
+      await addItemByUrl(
+        cleanUrl, 
+        name.trim() || undefined, 
+        isNotionVideo ? 'videos' : (userChangedCategory ? category : undefined), 
+        collectionId || null
+      );
       onClose();
     } catch (err: any) {
       setError(err.message || 'Error al agregar el enlace');
@@ -182,7 +193,10 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
               </label>
               <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value as CategoryType)}
+                onChange={(e) => {
+                  setCategory(e.target.value as CategoryType);
+                  setUserChangedCategory(true);
+                }}
                 className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-800 dark:text-white outline-none focus:border-blue-500"
               >
                 <option value="photos">Fotos</option>

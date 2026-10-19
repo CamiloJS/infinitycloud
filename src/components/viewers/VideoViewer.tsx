@@ -3,6 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { InfinityItem } from '@/types';
 import { adapterRegistry } from '@/lib/adapters/registry';
+import { YouTubeAdapter } from '@/lib/adapters/youtube';
+import { VimeoAdapter } from '@/lib/adapters/vimeo';
 import { useItems } from '@/context/ItemsContext';
 import { drawCoverCrop } from '@/lib/utils/videoThumbnail';
 import { 
@@ -25,9 +27,10 @@ import {
 interface VideoViewerProps {
   item: InfinityItem | null;
   onClose: () => void;
+  readOnly?: boolean;
 }
 
-export function VideoViewer({ item, onClose }: VideoViewerProps) {
+export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   const { editItem } = useItems();
   const [embedFailed, setEmbedFailed] = useState<boolean>(false);
   const [isMaximized, setIsMaximized] = useState<boolean>(false);
@@ -67,6 +70,14 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
       gainNodeRef.current = null;
     }
   }, [item?.id]);
+
+  useEffect(() => {
+    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+      gainNodeRef.current = null;
+    }
+  }, [corsRetryState]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -200,9 +211,27 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
     }
   };
 
-  const embedUrl = adapterRegistry.getEmbedUrl(item);
+  const targetVideoUrl = item.metadata?.s3Url || item.url;
+  const isYoutube = (
+    item.url.includes('youtube.com') ||
+    item.url.includes('youtu.be') ||
+    Boolean(item.metadata?.s3Url?.includes('youtube.com')) ||
+    Boolean(item.metadata?.s3Url?.includes('youtu.be'))
+  );
+
+  const isVimeo = (
+    item.url.includes('vimeo.com') ||
+    Boolean(item.metadata?.s3Url?.includes('vimeo.com'))
+  );
+
+  const embedUrl = adapterRegistry.getEmbedUrl(item) || (
+    isYoutube
+      ? new YouTubeAdapter().getEmbedUrl({ ...item, url: targetVideoUrl })
+      : (isVimeo ? new VimeoAdapter().getEmbedUrl({ ...item, url: targetVideoUrl }) : null)
+  );
+
   const directUrl = adapterRegistry.getDirectUrl(item);
-  const urlLower = item.url.toLowerCase();
+  const urlLower = targetVideoUrl.toLowerCase();
   const isVideoExt = (
     urlLower.endsWith('.mp4') ||
     urlLower.endsWith('.webm') ||
@@ -211,22 +240,25 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
     urlLower.endsWith('.ogv')
   );
   
-  const isDirectVideo = (
+  const isDirectVideo = !embedUrl && (
     item.provider === 'direct' ||
     (item.provider === 'notion' && item.category === 'videos') ||
+    Boolean(item.metadata?.isNotionVideo) ||
     Boolean(item.mimeType?.startsWith('video/')) ||
     isVideoExt
   );
 
   const notionDirectUrl = item.provider === 'notion'
-    ? `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}&url=${encodeURIComponent(item.url)}${item.metadata?.notionBlockId ? `&blockId=${encodeURIComponent(item.metadata.notionBlockId)}` : ''}${item.metadata?.notionPageId ? `&pageId=${encodeURIComponent(item.metadata.notionPageId)}` : ''}`
+    ? `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}&url=${encodeURIComponent(item.metadata?.s3Url || item.url)}${item.metadata?.notionBlockId ? `&blockId=${encodeURIComponent(item.metadata.notionBlockId)}` : ''}${item.metadata?.notionPageId ? `&pageId=${encodeURIComponent(item.metadata.notionPageId)}` : ''}`
     : directUrl;
 
   const baseSrc = item.provider === 'notion' ? notionDirectUrl : directUrl;
 
   const effectiveVideoSrc = corsRetryState === 'proxy'
-    ? `/api/proxy/media?url=${encodeURIComponent(item.url || directUrl)}`
-    : (corsRetryState === 'nocors' ? (item.url || directUrl) : baseSrc);
+    ? (item.provider === 'notion'
+        ? `${notionDirectUrl}&proxy=1`
+        : `/api/proxy/media?url=${encodeURIComponent(directUrl || item.url)}`)
+    : baseSrc;
 
   const handleVideoError = () => {
     if (corsRetryState === 'initial') {
@@ -437,19 +469,21 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
                 <span>{isCoverFit ? 'Rellenar' : '16:9'}</span>
               </button>
 
-              {/* Snapshot Frame as Thumbnail */}
-              <button
-                onClick={captureFrameAsThumbnail}
-                className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1 transition-all ${
-                  snapshotSuccess
-                    ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                    : 'bg-slate-800 border-slate-700/60 text-slate-300 hover:text-white'
-                }`}
-                title="Capturar fotograma actual y usarlo como miniatura del video"
-              >
-                {snapshotSuccess ? <Check size={13} /> : <Camera size={13} />}
-                <span>{snapshotSuccess ? '¡Guardada!' : 'Capturar miniatura'}</span>
-              </button>
+              {/* Snapshot Frame as Thumbnail (only when editable) */}
+              {!readOnly && (
+                <button
+                  onClick={captureFrameAsThumbnail}
+                  className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1 transition-all ${
+                    snapshotSuccess
+                      ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                      : 'bg-slate-800 border-slate-700/60 text-slate-300 hover:text-white'
+                  }`}
+                  title="Capturar fotograma actual y usarlo como miniatura del video"
+                >
+                  {snapshotSuccess ? <Check size={13} /> : <Camera size={13} />}
+                  <span>{snapshotSuccess ? '¡Guardada!' : 'Capturar miniatura'}</span>
+                </button>
+              )}
 
               {/* Picture in Picture */}
               <button
