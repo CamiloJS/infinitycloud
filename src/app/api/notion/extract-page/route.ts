@@ -4,6 +4,8 @@ import { decryptSecret } from '@/lib/crypto/encryption';
 import { getSessionFromRequest } from '@/lib/auth/session';
 import { getServerUserSettings } from '@/lib/server/store';
 
+export const maxDuration = 30;
+
 interface ExtractedNotionDetails {
   pageId: string | null;
   blockId: string | null;
@@ -291,6 +293,7 @@ export async function POST(req: NextRequest) {
             'Content-Type': 'application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
           },
+          signal: AbortSignal.timeout(4000),
           body: JSON.stringify({
             pageId: formattedId,
             limit: 100,
@@ -370,6 +373,7 @@ export async function POST(req: NextRequest) {
                       'Content-Type': 'application/json',
                       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                     },
+                    signal: AbortSignal.timeout(3000),
                     body: JSON.stringify({
                       urls: [{
                         url: rawSource,
@@ -413,68 +417,74 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // If no video in root blocks, check collections inside recordMap
-          if (chunkData?.recordMap?.collection && chunkData?.recordMap?.collection_view) {
-            for (const cId of Object.keys(chunkData.recordMap.collection)) {
-              for (const cvId of Object.keys(chunkData.recordMap.collection_view)) {
-                try {
-                  const qRes = await fetch('https://www.notion.so/api/v3/queryCollection', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    },
-                    body: JSON.stringify({
-                      collection: { id: cId },
-                      collectionView: { id: cvId },
-                      loader: {
-                        type: 'reducer',
-                        reducers: { collection_group_results: { type: 'results', limit: 50 } },
-                        sort: [],
-                        searchQuery: '',
-                        userTimeZone: 'America/Bogota'
-                      }
-                    })
-                  });
+          // If no video in root blocks, check collection views inside recordMap
+          if (chunkData?.recordMap?.collection_view) {
+            let checkedCollections = 0;
+            for (const [cvId, cv] of Object.entries(chunkData.recordMap.collection_view) as [string, any][]) {
+              if (checkedCollections >= 2) break;
+              const cvVal = cv?.value?.value || cv?.value;
+              const cId = cvVal?.format?.collection_pointer?.id || Object.keys(chunkData?.recordMap?.collection || {})[0];
+              if (!cId) continue;
 
-                  if (qRes.ok) {
-                    const qData = await qRes.json();
-                    const qBlocks = qData?.recordMap?.block || {};
-                    for (const [qId, qBVal] of Object.entries(qBlocks) as [string, any][]) {
-                      const qVal = qBVal?.value?.value || qBVal?.value;
-                      if (!qVal) continue;
+              checkedCollections++;
+              try {
+                const qRes = await fetch('https://www.notion.so/api/v3/queryCollection', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                  },
+                  signal: AbortSignal.timeout(3000),
+                  body: JSON.stringify({
+                    collection: { id: cId },
+                    collectionView: { id: cvId },
+                    loader: {
+                      type: 'reducer',
+                      reducers: { collection_group_results: { type: 'results', limit: 25 } },
+                      sort: [],
+                      searchQuery: '',
+                      userTimeZone: 'America/Bogota'
+                    }
+                  })
+                });
 
-                      const isQVideo = qVal.type === 'video' ||
-                        (qVal.type === 'file' && qVal.properties?.source?.[0]?.[0]?.match(/\.(mp4|mov|webm|m4v)/i)) ||
-                        ((qVal.type === 'embed' || qVal.type === 'bookmark') && isVideoUrl(qVal.properties?.source?.[0]?.[0] || ''));
+                if (qRes.ok) {
+                  const qData = await qRes.json();
+                  const qBlocks = qData?.recordMap?.block || {};
+                  for (const [qId, qBVal] of Object.entries(qBlocks) as [string, any][]) {
+                    const qVal = qBVal?.value?.value || qBVal?.value;
+                    if (!qVal) continue;
 
-                      if (isQVideo) {
-                        const rawSource = qVal.properties?.source?.[0]?.[0] || qVal.format?.display_source;
-                        const caption = qVal.properties?.title?.[0]?.[0] || pageTitle;
-                        if (rawSource) {
-                          return NextResponse.json({
-                            success: true,
-                            foundVideo: true,
-                            video: {
-                              url: rawSource,
-                              title: caption,
-                              caption,
-                              coverUrl: coverUrl || undefined,
-                              notionBlockId: qId,
-                              notionPageId: formattedId,
-                              isExpiringS3: rawSource.includes('amazonaws.com') || rawSource.includes('notion.so'),
-                              sourceType: 'notion_block',
-                              pageTitle,
-                              pageDescription
-                            }
-                          });
-                        }
+                    const isQVideo = qVal.type === 'video' ||
+                      (qVal.type === 'file' && qVal.properties?.source?.[0]?.[0]?.match(/\.(mp4|mov|webm|m4v)/i)) ||
+                      ((qVal.type === 'embed' || qVal.type === 'bookmark') && isVideoUrl(qVal.properties?.source?.[0]?.[0] || ''));
+
+                    if (isQVideo) {
+                      const rawSource = qVal.properties?.source?.[0]?.[0] || qVal.format?.display_source;
+                      const caption = qVal.properties?.title?.[0]?.[0] || pageTitle;
+                      if (rawSource) {
+                        return NextResponse.json({
+                          success: true,
+                          foundVideo: true,
+                          video: {
+                            url: rawSource,
+                            title: caption,
+                            caption,
+                            coverUrl: coverUrl || undefined,
+                            notionBlockId: qId,
+                            notionPageId: formattedId,
+                            isExpiringS3: rawSource.includes('amazonaws.com') || rawSource.includes('notion.so'),
+                            sourceType: 'notion_block',
+                            pageTitle,
+                            pageDescription
+                          }
+                        });
                       }
                     }
                   }
-                } catch {
-                  // ignore collection query errors
                 }
+              } catch {
+                // ignore collection query errors
               }
             }
           }
@@ -494,6 +504,7 @@ export async function POST(req: NextRequest) {
             'Content-Type': 'application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
           },
+          signal: AbortSignal.timeout(3000),
           body: JSON.stringify({
             type: 'block-space',
             name: 'page',
