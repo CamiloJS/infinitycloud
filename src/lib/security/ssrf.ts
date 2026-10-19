@@ -67,8 +67,11 @@ export function isSafeNotionMediaUrl(urlString: string): boolean {
       return true;
     }
 
-    // If s3.us-west-2.amazonaws.com, must strictly target Notion's secure bucket path
-    if (hostname === 's3.us-west-2.amazonaws.com' && url.pathname.startsWith('/secure.notion-static.com/')) {
+    // If s3.us-west-2.amazonaws.com or s3-us-west-2.amazonaws.com, must strictly target Notion's secure bucket path
+    if (
+      (hostname === 's3.us-west-2.amazonaws.com' || hostname === 's3-us-west-2.amazonaws.com') &&
+      url.pathname.startsWith('/secure.notion-static.com/')
+    ) {
       return true;
     }
 

@@ -14,20 +14,28 @@ interface ServerStorageSchema {
 function loadLocalStore(): ServerStorageSchema {
   try {
     if (fs.existsSync(DATA_FILE_PATH)) {
-      const content = fs.readFileSync(DATA_FILE_PATH, 'utf-8');
-      return JSON.parse(content);
+      const content = fs.readFileSync(DATA_FILE_PATH, 'utf-8').trim();
+      if (content) {
+        return JSON.parse(content);
+      }
     }
   } catch (err) {
-    console.warn('Could not read .server_data.json:', err);
+    // Graceful fallback if empty or during concurrent write
   }
   return { settings: {}, items: {}, collections: {} };
 }
 
 function saveLocalStore(data: ServerStorageSchema): void {
   try {
-    fs.writeFileSync(DATA_FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+    const tempPath = `${DATA_FILE_PATH}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempPath, DATA_FILE_PATH);
   } catch (err) {
-    console.warn('Could not write to .server_data.json:', err);
+    try {
+      fs.writeFileSync(DATA_FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+    } catch {
+      // ignore
+    }
   }
 }
 

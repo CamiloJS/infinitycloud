@@ -164,18 +164,22 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
         .then(data => {
           const vids = data.videos || (data.foundVideo && data.video ? [data.video] : []);
           setNotionVideos(vids);
-          if (data.foundVideo && data.video) {
-            setExtractedVideo(data.video);
+          const playableVid = (data.foundVideo && data.video && isValidDirectVideoStream(data.video.url))
+            ? data.video
+            : vids.find((v: any) => isValidDirectVideoStream(v?.url));
+
+          if (playableVid) {
+            setExtractedVideo(playableVid);
             editItem(item.id, {
               category: 'videos',
-              name: data.video.title || item.name,
-              thumbnailUrl: data.video.coverUrl || item.thumbnailUrl,
+              name: playableVid.title || item.name,
+              thumbnailUrl: playableVid.coverUrl || item.thumbnailUrl,
               metadata: {
                 ...item.metadata,
                 isNotionVideo: true,
-                s3Url: data.video.url,
-                notionBlockId: data.video.notionBlockId,
-                notionPageId: data.video.notionPageId,
+                s3Url: playableVid.url,
+                notionBlockId: playableVid.notionBlockId,
+                notionPageId: playableVid.notionPageId,
                 originalUrl: item.metadata?.originalUrl || item.url
               }
             }).catch(() => {});
@@ -435,7 +439,30 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
       // Second retry: fallback to direct play without CORS
       setCorsRetryState('nocors');
     } else {
-      if (!isNotion) {
+      if (isNotion && !isExtractingNotion) {
+        // Attempt fresh signed URL from Notion if previous signed URL expired
+        setIsExtractingNotion(true);
+        fetch('/api/notion/extract-page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: item.metadata?.originalUrl || item.url })
+        })
+          .then(r => r.json())
+          .then(data => {
+            const playableVid = (data.foundVideo && data.video && isValidDirectVideoStream(data.video.url))
+              ? data.video
+              : (data.videos || []).find((v: any) => isValidDirectVideoStream(v?.url));
+
+            if (playableVid) {
+              setExtractedVideo(playableVid);
+              setCorsRetryState('initial');
+            } else {
+              setEmbedFailed(true);
+            }
+          })
+          .catch(() => setEmbedFailed(true))
+          .finally(() => setIsExtractingNotion(false));
+      } else if (!isNotion) {
         setEmbedFailed(true);
       }
     }
@@ -646,23 +673,25 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                     <span>Guardar y Reproducir</span>
                   </button>
                 </div>
-                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] leading-relaxed space-y-1.5 text-left">
-                  <p className="font-bold text-amber-300 flex items-center gap-1.5">
-                    <span>⚠️</span>
-                    <span>Página privada de Notion (publicAccessRole: none)</span>
-                  </p>
-                  <p className="text-slate-300">
-                    Notion protege este enlace de forma privada dentro de tu sesión. Para que cualquier plataforma externa pueda leer y reproducir el video directamente:
-                  </p>
-                  <div className="pl-2 space-y-1 text-slate-300 border-l border-amber-500/30">
-                    <p>
-                      <strong className="text-white">1. En Notion (automático):</strong> Haz clic en <span className="text-amber-200 font-semibold">Compartir</span> en la esquina superior &gt; ve a la pestaña <span className="text-amber-200 font-semibold">Publicar</span> &gt; y pulsa <span className="text-amber-200 font-semibold">&quot;Publicar en la web&quot;</span>. Con eso Infinity lo detectará y reproducirá solo.
+                {notionVideos.length === 0 && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] leading-relaxed space-y-1.5 text-left">
+                    <p className="font-bold text-amber-300 flex items-center gap-1.5">
+                      <span>⚠️</span>
+                      <span>Página privada de Notion (publicAccessRole: none)</span>
                     </p>
-                    <p>
-                      <strong className="text-white">2. O enlace directo:</strong> En Notion, haz clic en los 3 puntos del video &gt; <span className="text-amber-200 font-semibold">&quot;Ver original&quot;</span>, copia el link del archivo (.mp4) y pégalo en la casilla de arriba.
+                    <p className="text-slate-300">
+                      Notion protege este enlace de forma privada dentro de tu sesión. Para que cualquier plataforma externa pueda leer y reproducir el video directamente:
                     </p>
+                    <div className="pl-2 space-y-1 text-slate-300 border-l border-amber-500/30">
+                      <p>
+                        <strong className="text-white">1. En Notion (automático):</strong> Haz clic en <span className="text-amber-200 font-semibold">Compartir</span> en la esquina superior &gt; ve a la pestaña <span className="text-amber-200 font-semibold">Publicar</span> &gt; y pulsa <span className="text-amber-200 font-semibold">&quot;Publicar en la web&quot;</span>. Con eso Infinity lo detectará y reproducirá solo.
+                      </p>
+                      <p>
+                        <strong className="text-white">2. O enlace directo:</strong> En Notion, haz clic en los 3 puntos del video &gt; <span className="text-amber-200 font-semibold">&quot;Ver original&quot;</span>, copia el link del archivo (.mp4) y pégalo en la casilla de arriba.
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               <div className="flex items-center justify-center gap-2.5 flex-wrap pt-1">

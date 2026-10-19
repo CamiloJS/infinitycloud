@@ -12,18 +12,25 @@ function extractNotionDetails(urlOrId: string): ExtractedNotionDetails {
   const clean = urlOrId.trim();
   const lower = clean.toLowerCase();
 
-  const isVideoExt = (
+  const isHttp = lower.startsWith('http://') || lower.startsWith('https://');
+
+  const isVideoExt = isHttp && (
     lower.endsWith('.mp4') ||
     lower.endsWith('.mov') ||
     lower.endsWith('.webm') ||
     lower.endsWith('.m4v') ||
-    lower.endsWith('.ogv')
+    lower.endsWith('.ogv') ||
+    lower.includes('.mp4?') ||
+    lower.includes('.mov?') ||
+    lower.includes('.webm?') ||
+    lower.includes('.m4v?') ||
+    lower.includes('.ogv?')
   );
 
-  const isDirectVideoUrl = isVideoExt || (
+  const isDirectVideoUrl = isHttp && (isVideoExt || (
     (lower.includes('amazonaws.com') || lower.includes('file.notion.so')) &&
     (lower.includes('.mp4') || lower.includes('.mov') || lower.includes('.webm') || lower.includes('/video'))
-  );
+  ));
 
   let pageId: string | null = null;
   let blockId: string | null = null;
@@ -81,14 +88,18 @@ function extractNotionDetails(urlOrId: string): ExtractedNotionDetails {
   };
 }
 
-function formatNotionUuid(clean32: string): string {
-  if (clean32.length !== 32) return clean32;
-  return `${clean32.slice(0, 8)}-${clean32.slice(8, 12)}-${clean32.slice(12, 16)}-${clean32.slice(16, 20)}-${clean32.slice(20)}`;
+function formatNotionUuid(id: string): string {
+  if (!id) return id;
+  const clean = id.replace(/-/g, '');
+  if (clean.length !== 32) return id;
+  return `${clean.slice(0, 8)}-${clean.slice(8, 12)}-${clean.slice(12, 16)}-${clean.slice(16, 20)}-${clean.slice(20)}`;
 }
 
 function isVideoUrl(url: string): boolean {
-  if (!url) return false;
-  const l = url.toLowerCase();
+  if (!url || typeof url !== 'string') return false;
+  const clean = url.trim();
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) return false;
+  const l = clean.toLowerCase();
   return (
     l.includes('youtube.com/watch') ||
     l.includes('youtube.com/embed') ||
@@ -101,7 +112,12 @@ function isVideoUrl(url: string): boolean {
     l.endsWith('.webm') ||
     l.endsWith('.m4v') ||
     l.endsWith('.ogv') ||
-    ((l.includes('amazonaws.com') || l.includes('file.notion.so')) && (l.includes('.mp4') || l.includes('.mov') || l.includes('.webm')))
+    l.includes('.mp4?') ||
+    l.includes('.mov?') ||
+    l.includes('.webm?') ||
+    l.includes('.m4v?') ||
+    l.includes('.ogv?') ||
+    ((l.includes('amazonaws.com') || l.includes('file.notion.so')) && (l.includes('.mp4') || l.includes('.mov') || l.includes('.webm') || l.includes('/video')))
   );
 }
 
@@ -381,27 +397,40 @@ export async function POST(req: NextRequest) {
             }
 
             if (isVideoBlock || isFileWithVideo || isEmbedWithVideo || propVideoUrl) {
-              let rawSource = propVideoUrl || val.properties?.source?.[0]?.[0] || val.format?.display_source;
-              const caption = val.properties?.caption?.[0]?.[0] || val.properties?.title?.[0]?.[0] || pageTitle;
+              const blockSource = val.properties?.source?.[0]?.[0];
+              const displaySource = val.format?.display_source;
+              let rawSource = (blockSource && isVideoUrl(blockSource))
+                ? blockSource
+                : (displaySource && isVideoUrl(displaySource)
+                  ? displaySource
+                  : (propVideoUrl || (blockSource && typeof blockSource === 'string' && blockSource.startsWith('http') ? blockSource : displaySource)));
+
+              const rawTitle = val.properties?.title?.[0]?.[0];
+              const rawCaption = val.properties?.caption?.[0]?.[0];
+              const blockTitle = (rawTitle && typeof rawTitle === 'string' && !rawTitle.startsWith('http') ? rawTitle : null) ||
+                                 (rawCaption && typeof rawCaption === 'string' && !rawCaption.startsWith('http') ? rawCaption : null) ||
+                                 pageTitle;
+
               let finalVideoUrl = rawSource;
               const isS3 = Boolean(rawSource && (rawSource.includes('amazonaws.com') || rawSource.includes('notion.so')));
 
               // Request fresh signed URL from Notion public API if it's an S3 link
               if (isS3 && rawSource) {
                 try {
+                  const formattedBlockId = formatNotionUuid(bId);
                   const signRes = await fetch('https://www.notion.so/api/v3/getSignedFileUrls', {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
                       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                     },
-                    signal: AbortSignal.timeout(3000),
+                    signal: AbortSignal.timeout(4000),
                     body: JSON.stringify({
                       urls: [{
                         url: rawSource,
                         permissionRecord: {
                           table: 'block',
-                          id: bId
+                          id: formattedBlockId
                         }
                       }]
                     })
@@ -418,12 +447,12 @@ export async function POST(req: NextRequest) {
                 }
               }
 
-              if (finalVideoUrl) {
+              if (finalVideoUrl && finalVideoUrl.startsWith('http')) {
                 addExtractedVideo({
                   id: bId,
                   url: finalVideoUrl,
-                  title: caption || pageTitle,
-                  caption,
+                  title: blockTitle,
+                  caption: blockTitle,
                   coverUrl: coverUrl || undefined,
                   notionBlockId: bId,
                   notionPageId: formattedId,
@@ -651,19 +680,51 @@ export async function POST(req: NextRequest) {
                 ((val.type === 'embed' || val.type === 'bookmark') && isVideoUrl(val.properties?.source?.[0]?.[0] || ''));
 
               if (isVideo) {
-                const videoSrc = val.properties?.source?.[0]?.[0] || val.format?.display_source;
-                const caption = val.properties?.caption?.[0]?.[0] || pageTitle;
+                const blockSrc = val.properties?.source?.[0]?.[0];
+                const displaySrc = val.format?.display_source;
+                let videoSrc = (blockSrc && isVideoUrl(blockSrc)) ? blockSrc : (displaySrc && isVideoUrl(displaySrc) ? displaySrc : null);
+                const rawTitle = val.properties?.title?.[0]?.[0];
+                const caption = (rawTitle && typeof rawTitle === 'string' && !rawTitle.startsWith('http') ? rawTitle : null) || 
+                                val.properties?.caption?.[0]?.[0] || 
+                                pageTitle;
 
                 if (videoSrc) {
+                  let finalSrc = videoSrc;
+                  const isS3 = videoSrc.includes('amazonaws.com') || videoSrc.includes('notion.so');
+                  if (isS3) {
+                    try {
+                      const signRes = await fetch('https://www.notion.so/api/v3/getSignedFileUrls', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        },
+                        signal: AbortSignal.timeout(3000),
+                        body: JSON.stringify({
+                          urls: [{
+                            url: videoSrc,
+                            permissionRecord: { table: 'block', id: formatNotionUuid(bId) }
+                          }]
+                        })
+                      });
+                      if (signRes.ok) {
+                        const signData = await signRes.json();
+                        if (signData?.signedUrls?.[0]) {
+                          finalSrc = signData.signedUrls[0];
+                        }
+                      }
+                    } catch {}
+                  }
+
                   addExtractedVideo({
                     id: bId,
-                    url: videoSrc,
+                    url: finalSrc,
                     title: caption || pageTitle,
                     caption,
                     coverUrl: coverUrl || undefined,
                     notionBlockId: bId,
                     notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
-                    isExpiringS3: videoSrc.includes('amazonaws.com') || videoSrc.includes('notion.so'),
+                    isExpiringS3: isS3,
                     sourceType: 'notion_block',
                     pageTitle,
                     pageDescription
@@ -677,7 +738,7 @@ export async function POST(req: NextRequest) {
         }
 
         // 4. Check for direct S3 / Notion video links in HTML
-        const s3VideoMatch = html.match(/https?:\/\/(?:prod-files-secure\.s3\.us-west-2\.amazonaws\.com|file\.notion\.so\/f\/f\/)[^"'\s<>]+\.(?:mp4|webm|mov|m4v)(?:\?[^"'\s<>]*)?/i);
+        const s3VideoMatch = html.match(/https?:\/\/(?:prod-files-secure\.s3\.us-west-2\.amazonaws\.com|file\.notion\.so\/f\/f\/|s3(?:-|\.)us-west-2\.amazonaws\.com\/secure\.notion-static\.com)[^"'\s<>]+\.(?:mp4|webm|mov|m4v)(?:\?[^"'\s<>]*)?/i);
         if (s3VideoMatch && s3VideoMatch[0]) {
           addExtractedVideo({
             id: 'scrape_s3',
