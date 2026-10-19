@@ -18,8 +18,10 @@ import {
   Image as ImageIcon, 
   Video as VideoIcon, 
   Music as MusicIcon, 
-  FileText as FileIcon, 
-  Archive as ArchiveIcon 
+  FileText as FileIcon,
+  Archive as ArchiveIcon,
+  Lock,
+  Sliders
 } from 'lucide-react';
 
 interface ItemCardProps {
@@ -122,11 +124,7 @@ export function ItemCard({ item, onOpen, onEdit, onMove }: ItemCardProps) {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (item.category === 'music') {
-                playTrack(item);
-              } else {
-                onOpen(item);
-              }
+              onOpen(item);
             }}
             className={`absolute inset-0 m-auto w-12 h-12 rounded-full bg-black/60 backdrop-blur-md text-white flex items-center justify-center transition-all ${
               isCurrentPlayingAudio
@@ -143,10 +141,17 @@ export function ItemCard({ item, onOpen, onEdit, onMove }: ItemCardProps) {
       {/* Card Body */}
       <div className="p-3.5 flex-1 flex flex-col justify-between">
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase tracking-wider ${getProviderBadgeColor()}`}>
-              {item.provider === 'youtube' ? 'video' : item.provider}
+              {item.category === 'videos' || item.provider === 'youtube' ? 'video' : (item.category === 'music' && item.provider === 'direct' ? 'audio' : item.provider)}
             </span>
+
+            {item.isProtected && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1" title="Protegido con contraseña">
+                <Lock size={10} />
+                <span>Bloqueado</span>
+              </span>
+            )}
 
             {coll && (
               <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate max-w-[120px]">
@@ -195,6 +200,15 @@ export function ItemCard({ item, onOpen, onEdit, onMove }: ItemCardProps) {
                       className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
                     >
                       <Play size={13} /> Abrir visor
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        onEdit(item);
+                      }}
+                      className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                    >
+                      <Sliders size={13} /> Editar información
                     </button>
                     <button
                       onClick={() => {

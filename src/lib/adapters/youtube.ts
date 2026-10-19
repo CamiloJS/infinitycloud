@@ -48,7 +48,7 @@ export class YouTubeAdapter implements ProviderAdapter {
     const videoId = this.extractVideoId(urlString);
     let title = videoId ? `Video (${videoId})` : 'Video';
     let thumbnailUrl = videoId 
-      ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
+      ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
       : undefined;
 
     if (videoId) {
@@ -58,7 +58,8 @@ export class YouTubeAdapter implements ProviderAdapter {
         if (res.ok) {
           const data = await res.json();
           if (data?.title) title = data.title;
-          if (data?.thumbnail_url) thumbnailUrl = data.thumbnail_url;
+          // Keep maxresdefault as primary 16:9 thumbnail, or fallback to oembed
+          thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
         } else {
           throw new Error('Direct oembed failed');
         }

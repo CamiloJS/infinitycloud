@@ -30,6 +30,8 @@ export interface InfinityItem {
   trashedAt?: number | null;
   createdAt: number;
   updatedAt: number;
+  isProtected?: boolean;
+  passwordHash?: string;
   metadata?: Record<string, any>;
 }
 

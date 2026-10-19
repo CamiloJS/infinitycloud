@@ -63,6 +63,9 @@ interface ItemsContextType {
   importDataJson: (jsonString: string, mode: 'merge' | 'replace') => Promise<{ success: boolean; message: string }>;
   refreshData: () => Promise<void>;
   filteredItems: InfinityItem[];
+  unlockedItemIds: Set<string>;
+  unlockItem: (id: string) => void;
+  isItemUnlocked: (item: InfinityItem) => boolean;
 }
 
 const ItemsContext = createContext<ItemsContextType | undefined>(undefined);
@@ -81,6 +84,16 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [sortOption, setSortOption] = useState<SortOption>('date-desc');
   const [selectedProvider, setSelectedProvider] = useState<ProviderType | 'all'>('all');
+  const [unlockedItemIds, setUnlockedItemIds] = useState<Set<string>>(new Set());
+
+  const unlockItem = (id: string) => {
+    setUnlockedItemIds(prev => new Set(prev).add(id));
+  };
+
+  const isItemUnlocked = (item: InfinityItem): boolean => {
+    if (!item.isProtected || !item.passwordHash) return true;
+    return unlockedItemIds.has(item.id);
+  };
 
   const userId = user?.uid || 'guest';
 
@@ -304,7 +317,10 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
         exportDataJson,
         importDataJson,
         refreshData,
-        filteredItems
+        filteredItems,
+        unlockedItemIds,
+        unlockItem,
+        isItemUnlocked
       }}
     >
       {children}

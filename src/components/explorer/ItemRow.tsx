@@ -19,7 +19,9 @@ import {
   Video as VideoIcon, 
   Music as MusicIcon, 
   FileText as FileIcon, 
-  Archive as ArchiveIcon 
+  Archive as ArchiveIcon,
+  Lock,
+  Sliders
 } from 'lucide-react';
 
 interface ItemRowProps {
@@ -79,8 +81,7 @@ export function ItemRow({ item, onOpen, onEdit, onMove }: ItemRowProps) {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (item.category === 'music') playTrack(item);
-                else onOpen(item);
+                onOpen(item);
               }}
               className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
             >
@@ -98,8 +99,13 @@ export function ItemRow({ item, onOpen, onEdit, onMove }: ItemRowProps) {
 
           <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
             <span className="uppercase text-[10px] font-semibold tracking-wider font-mono">
-              {item.provider === 'youtube' ? 'video' : item.provider}
+              {item.category === 'videos' || item.provider === 'youtube' ? 'video' : (item.category === 'music' && item.provider === 'direct' ? 'audio' : item.provider)}
             </span>
+            {item.isProtected && (
+              <span className="text-[10px] text-amber-500 flex items-center gap-0.5 font-semibold">
+                <Lock size={10} /> Protegido
+              </span>
+            )}
             {coll && (
               <>
                 <span>•</span>
@@ -163,6 +169,15 @@ export function ItemRow({ item, onOpen, onEdit, onMove }: ItemRowProps) {
                     className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
                   >
                     <Play size={13} /> Abrir visor
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      onEdit(item);
+                    }}
+                    className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                  >
+                    <Sliders size={13} /> Editar información
                   </button>
                   <button
                     onClick={() => {

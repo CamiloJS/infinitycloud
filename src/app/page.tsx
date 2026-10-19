@@ -18,6 +18,7 @@ import { DocumentViewer } from '@/components/viewers/DocumentViewer';
 import { OtherViewer } from '@/components/viewers/OtherViewer';
 import { AddItemModal } from '@/components/modals/AddItemModal';
 import { EditItemModal } from '@/components/modals/EditItemModal';
+import { PasswordUnlockModal } from '@/components/modals/PasswordUnlockModal';
 import { MoveModal } from '@/components/modals/MoveModal';
 import { CollectionModal } from '@/components/modals/CollectionModal';
 import { NotionImportModal } from '@/components/modals/NotionImportModal';
@@ -43,7 +44,9 @@ export default function HomePage() {
     collections, 
     emptyTrash,
     setActiveCollectionId,
-    setActiveView
+    setActiveView,
+    isItemUnlocked,
+    unlockItem
   } = useItems();
   const { playTrack } = usePlayer();
 
@@ -62,6 +65,7 @@ export default function HomePage() {
   // Item Modals
   const [editingItem, setEditingItem] = useState<InfinityItem | null>(null);
   const [movingItem, setMovingItem] = useState<InfinityItem | null>(null);
+  const [unlockingItem, setUnlockingItem] = useState<InfinityItem | null>(null);
 
   // Viewers state
   const [activePhoto, setActivePhoto] = useState<InfinityItem | null>(null);
@@ -84,7 +88,7 @@ export default function HomePage() {
   // Active photos list for navigation in lightbox
   const photosList = filteredItems.filter(i => i.category === 'photos');
 
-  const handleOpenItem = (item: InfinityItem) => {
+  const openActualItem = (item: InfinityItem) => {
     if (item.category === 'photos') {
       setActivePhoto(item);
     } else if (item.category === 'videos') {
@@ -97,6 +101,20 @@ export default function HomePage() {
     } else {
       setActiveOther(item);
     }
+  };
+
+  const handleOpenItem = (item: InfinityItem) => {
+    if (item.isProtected && item.passwordHash && !isItemUnlocked(item)) {
+      setUnlockingItem(item);
+      return;
+    }
+    openActualItem(item);
+  };
+
+  const handleUnlocked = (item: InfinityItem) => {
+    unlockItem(item.id);
+    setUnlockingItem(null);
+    openActualItem(item);
   };
 
   const handleNextPhoto = () => {
@@ -326,7 +344,15 @@ export default function HomePage() {
 
       <EditItemModal
         item={editingItem}
+        isOpen={Boolean(editingItem)}
         onClose={() => setEditingItem(null)}
+      />
+
+      <PasswordUnlockModal
+        item={unlockingItem}
+        isOpen={Boolean(unlockingItem)}
+        onClose={() => setUnlockingItem(null)}
+        onUnlocked={handleUnlocked}
       />
 
       <MoveModal
