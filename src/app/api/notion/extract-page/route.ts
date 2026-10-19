@@ -609,7 +609,10 @@ export async function POST(req: NextRequest) {
         // 1. Extract title
         const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
         if (titleMatch && titleMatch[1]) {
-          pageTitle = titleMatch[1].replace(/\s*\|\s*Notion.*$/i, '').trim();
+          const parsed = titleMatch[1].replace(/\s*\|\s*Notion.*$/i, '').trim();
+          if (parsed && parsed !== 'Notion' && parsed.length > 1) {
+            pageTitle = parsed;
+          }
         }
 
         // 2. Extract cover / og:image

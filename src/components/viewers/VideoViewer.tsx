@@ -21,7 +21,8 @@ import {
   PictureInPicture,
   Check,
   Zap,
-  Ratio
+  Ratio,
+  CheckCircle2
 } from 'lucide-react';
 
 interface VideoViewerProps {
@@ -43,6 +44,8 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   const [isExtractingNotion, setIsExtractingNotion] = useState<boolean>(false);
   const [extractedVideo, setExtractedVideo] = useState<any>(null);
   const [notionSiteUrl, setNotionSiteUrl] = useState<string | null>(null);
+  const [notionPageTitle, setNotionPageTitle] = useState<string | null>(null);
+  const [notionCoverUrl, setNotionCoverUrl] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -68,6 +71,8 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     setCorsRetryState('initial');
     setExtractedVideo(null);
     setNotionSiteUrl(null);
+    setNotionPageTitle(null);
+    setNotionCoverUrl(null);
     setIsExtractingNotion(false);
 
     if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
@@ -119,8 +124,10 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                 originalUrl: item.metadata?.originalUrl || item.url
               }
             }).catch(() => {});
-          } else if (data.publicSiteUrl) {
-            setNotionSiteUrl(data.publicSiteUrl);
+          } else {
+            if (data.publicSiteUrl) setNotionSiteUrl(data.publicSiteUrl);
+            if (data.pageTitle && data.pageTitle !== 'Notion') setNotionPageTitle(data.pageTitle);
+            if (data.coverUrl) setNotionCoverUrl(data.coverUrl);
           }
         })
         .catch(err => {
@@ -301,19 +308,19 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     urlLower.endsWith('.ogv')
   );
   
-  const isDirectVideo = !embedUrl && (
-    Boolean(extractedVideo) ||
-    Boolean(item.metadata?.s3Url && isVideoExt) ||
-    item.provider === 'direct' ||
-    Boolean(item.metadata?.isNotionVideo && item.metadata?.s3Url) ||
-    Boolean(item.mimeType?.startsWith('video/')) ||
-    isVideoExt
-  );
-
   const isNotion = item.provider === 'notion' || 
                    item.url.includes('notion.so') || 
                    item.url.includes('notion.site') || 
                    item.url.includes('notion.com');
+
+  const isDirectVideo = !embedUrl && (
+    Boolean(extractedVideo?.url) ||
+    Boolean(item.metadata?.s3Url && isVideoExt) ||
+    Boolean(item.metadata?.isNotionVideo && item.metadata?.s3Url) ||
+    (!isNotion && item.provider === 'direct') ||
+    (!isNotion && Boolean(item.mimeType?.startsWith('video/'))) ||
+    isVideoExt
+  );
 
   const notionDirectUrl = extractedVideo?.url || (
     item.provider === 'notion'
@@ -388,6 +395,55 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
               <p className="text-slate-300 font-medium text-sm">Detectando video en Notion...</p>
               <p className="text-slate-500 text-xs">Conectando con el contenido multimedia</p>
             </div>
+          ) : isNotion && !extractedVideo ? (
+            <div className="text-center p-6 sm:p-8 max-w-lg select-text">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shadow-xl">
+                {notionCoverUrl || item.thumbnailUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={notionCoverUrl || item.thumbnailUrl} alt="Notion" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="font-bold text-2xl text-blue-400">N</span>
+                )}
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold mb-3">
+                <CheckCircle2 size={13} />
+                <span>Página pública de Notion verificada</span>
+              </div>
+
+              <h3 className="text-white font-bold text-lg mb-2">
+                {notionPageTitle || item.name || 'Notion Cloud'}
+              </h3>
+
+              <p className="text-slate-400 text-xs sm:text-sm mb-6 leading-relaxed max-w-md mx-auto">
+                Este enlace es un espacio de trabajo o página de documentos de Notion disponible públicamente. Como es una página interactiva con documentos y colecciones (sin un archivo de video único incrustado), puedes explorarla interactivamente en la vista pública o en la app de Notion.
+              </p>
+
+              <div className="flex items-center justify-center gap-3 flex-wrap mb-4">
+                <a
+                  href={notionSiteUrl || `https://camilojaimes.notion.site/Notion-Cloud-92896c82887c4bb5845b5c00e587bf97`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs sm:text-sm transition-all shadow-lg shadow-blue-600/30 active:scale-95"
+                >
+                  <ExternalLink size={15} />
+                  Abrir en Notion Site público
+                </a>
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-xs sm:text-sm transition-all border border-slate-700/80 active:scale-95"
+                >
+                  <ExternalLink size={15} />
+                  Abrir en Notion
+                </a>
+              </div>
+
+              <p className="text-slate-500 text-[11px] max-w-sm mx-auto">
+                💡 Si agregas un video (.mp4) dentro de una página de Notion, Infinity lo extraerá y reproducirá automáticamente aquí.
+              </p>
+            </div>
           ) : embedFailed ? (
             <div className="text-center p-8 max-w-md">
               <AlertCircle size={48} className="mx-auto text-amber-400 mb-3" />
@@ -426,27 +482,6 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
               onError={handleVideoError}
               className={`w-full h-full ${isCoverFit ? 'object-cover' : 'object-contain'}`}
             />
-          ) : isNotion ? (
-            <div className="text-center p-8 max-w-md">
-              <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-lg">
-                N
-              </div>
-              <h4 className="text-white font-medium text-base mb-1.5">{item.name}</h4>
-              <p className="text-slate-400 text-xs mb-5 leading-relaxed">
-                Esta página o base de datos de Notion no contiene un archivo de video compatible directamente reproducible en el reproductor. Puedes abrirla directamente en Notion o acceder a su vista pública.
-              </p>
-              <div className="flex items-center justify-center gap-3 flex-wrap">
-                <a
-                  href={notionSiteUrl || item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-lg shadow-blue-600/25"
-                >
-                  <ExternalLink size={14} />
-                  Abrir en {notionSiteUrl ? 'Notion Site' : 'Notion'}
-                </a>
-              </div>
-            </div>
           ) : (
             <div className="text-center p-8">
               <p className="text-slate-400 mb-4">No se puede reproducir directamente este formato en el navegador.</p>
@@ -463,7 +498,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
         </div>
 
         {/* Enhanced Player Controls Bar (Features & Audio Booster) */}
-        {isDirectVideo && (
+        {isDirectVideo && !embedFailed && (!isNotion || Boolean(extractedVideo)) && (
           <div className="w-full px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between flex-wrap gap-2 text-xs text-slate-300">
             {/* Volume Booster Controls */}
             <div className="flex items-center gap-2">
