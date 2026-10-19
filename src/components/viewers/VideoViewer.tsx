@@ -515,15 +515,13 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
         ? item.metadata!.s3Url 
         : (item.provider === 'notion' ? notionDirectUrl : directUrl));
 
-  const effectiveVideoSrc = corsRetryState === 'proxy'
-    ? (item.provider === 'notion'
-        ? `${notionDirectUrl}${notionDirectUrl.includes('?') ? '&' : '?'}proxy=1`
-        : `/api/proxy/media?url=${encodeURIComponent(directUrl || item.url)}`)
+  const effectiveVideoSrc = (corsRetryState === 'proxy' || (volumeBoost > 1.0 && (baseSrc.includes('amazonaws.com') || baseSrc.includes('notion'))))
+    ? `/api/proxy/media?url=${encodeURIComponent(baseSrc)}`
     : baseSrc;
 
   const handleVideoError = () => {
     if (corsRetryState === 'initial') {
-      // First retry: attempt proxied stream to acquire CORS headers
+      // First retry: attempt proxied stream to acquire CORS headers and bypass mobile carrier restrictions
       setCorsRetryState('proxy');
     } else if (corsRetryState === 'proxy') {
       // Second retry: fallback to direct play without CORS
@@ -853,7 +851,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
               autoPlay
               playsInline
               loop={isLooping}
-              crossOrigin={corsRetryState === 'nocors' ? undefined : 'anonymous'}
+              crossOrigin={(volumeBoost > 1.0 || corsRetryState === 'proxy') ? 'anonymous' : undefined}
               onError={handleVideoError}
               onLoadedMetadata={() => {
                 if (videoRef.current) {

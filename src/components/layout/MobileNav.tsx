@@ -23,7 +23,10 @@ import {
   LogOut,
   Sun,
   Moon,
-  Laptop
+  Laptop,
+  Settings,
+  FileEdit,
+  ChevronRight
 } from 'lucide-react';
 
 interface MobileNavProps {
@@ -33,7 +36,9 @@ interface MobileNavProps {
   onOpenNotionModal: () => void;
   onOpenImportExportModal: () => void;
   onOpen2FaModal: () => void;
+  onOpenAccountSettings: () => void;
   onOpenCreateCollectionModal: () => void;
+  onOpenTextEditorModal: () => void;
 }
 
 export function MobileNav({
@@ -43,7 +48,9 @@ export function MobileNav({
   onOpenNotionModal,
   onOpenImportExportModal,
   onOpen2FaModal,
-  onOpenCreateCollectionModal
+  onOpenAccountSettings,
+  onOpenCreateCollectionModal,
+  onOpenTextEditorModal
 }: MobileNavProps) {
   const { 
     collections, 
@@ -90,17 +97,43 @@ export function MobileNav({
             </button>
           </div>
 
-          {/* Quick Add */}
-          <button
-            onClick={() => {
-              onClose();
-              onOpenAddModal();
-            }}
-            className="w-full mt-4 py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-md"
-          >
-            <Plus size={18} />
-            <span>Añadir enlace</span>
-          </button>
+          {/* Quick Actions */}
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={() => {
+                onClose();
+                onOpenAddModal();
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-md active:scale-[0.98]"
+            >
+              <Plus size={18} />
+              <span>Añadir enlace</span>
+            </button>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenCreateCollectionModal();
+                }}
+                className="py-2 px-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-[0.98]"
+              >
+                <FolderPlus size={14} className="text-violet-500" />
+                <span>Carpeta</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenTextEditorModal();
+                }}
+                className="py-2 px-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-[0.98]"
+              >
+                <FileEdit size={14} className="text-blue-500" />
+                <span>Documento</span>
+              </button>
+            </div>
+          </div>
 
           {/* Main Views */}
           <div className="space-y-1 mt-4">
@@ -181,11 +214,11 @@ export function MobileNav({
             </div>
           </div>
 
-          {/* Collections */}
+          {/* Collections / Folders */}
           <div className="mt-6">
             <div className="flex items-center justify-between px-3 mb-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                Colecciones
+                Carpetas
               </span>
               <button
                 onClick={() => {
@@ -193,6 +226,7 @@ export function MobileNav({
                   onOpenCreateCollectionModal();
                 }}
                 className="p-1 rounded text-slate-400"
+                title="Nueva carpeta"
               >
                 <Plus size={15} />
               </button>
@@ -226,27 +260,6 @@ export function MobileNav({
 
         {/* Bottom Options */}
         <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => {
-                onClose();
-                onOpenNotionModal();
-              }}
-              className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200"
-            >
-              <Sparkles size={14} className="text-cyan-500" /> Notion
-            </button>
-            <button
-              onClick={() => {
-                onClose();
-                onOpenImportExportModal();
-              }}
-              className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200"
-            >
-              <FolderPlus size={14} className="text-violet-500" /> JSON
-            </button>
-          </div>
-
           {/* Theme */}
           <div className="flex items-center justify-between text-xs text-slate-500">
             <span>Tema</span>
@@ -272,25 +285,36 @@ export function MobileNav({
             </div>
           </div>
 
-          {/* User & 2FA */}
+          {/* User & Settings */}
           {user && (
-            <div className="flex items-center justify-between pt-2">
+            <div className="space-y-2 pt-2">
               <button
                 onClick={() => {
                   onClose();
-                  onOpen2FaModal();
+                  onOpenAccountSettings();
                 }}
-                className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300"
+                className="w-full py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-between transition-colors shadow-sm"
               >
-                <ShieldCheck size={14} className="text-emerald-500" /> 2FA
+                <div className="flex items-center gap-2">
+                  <Settings size={15} className="text-blue-500" />
+                  <span>Ajustes de la cuenta</span>
+                </div>
+                <ChevronRight size={14} className="text-slate-400" />
               </button>
-              <button
-                onClick={signOut}
-                className="p-1.5 text-slate-400 hover:text-rose-500"
-                title="Cerrar sesión"
-              >
-                <LogOut size={16} />
-              </button>
+
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs text-slate-500 truncate max-w-[180px]">
+                  {user.displayName || user.email}
+                </span>
+                <button
+                  onClick={signOut}
+                  className="p-1.5 text-slate-400 hover:text-rose-500 flex items-center gap-1 text-xs"
+                  title="Cerrar sesión"
+                >
+                  <LogOut size={15} />
+                  <span>Salir</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

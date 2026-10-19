@@ -53,6 +53,11 @@ interface ItemsContextType {
     collectionId?: string | null,
     customMetadata?: Record<string, any>
   ) => Promise<InfinityItem>;
+  createTextDocument: (
+    name: string,
+    content: string,
+    collectionId?: string | null
+  ) => Promise<InfinityItem>;
   editItem: (id: string, updates: Partial<InfinityItem>) => Promise<void>;
   moveToTrash: (id: string) => Promise<void>;
   restoreFromTrash: (id: string) => Promise<void>;
@@ -171,6 +176,42 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       metadata: mergedMetadata
+    };
+
+    await saveItem(userId, newItem);
+    setItems(prev => [newItem, ...prev]);
+    return newItem;
+  };
+
+  const createTextDocument = async (
+    name: string,
+    content: string,
+    collectionId?: string | null
+  ): Promise<InfinityItem> => {
+    const cleanName = name.trim();
+    const docName = cleanName.endsWith('.md') || cleanName.endsWith('.txt') ? cleanName : `${cleanName}.md`;
+    const blobSize = typeof Blob !== 'undefined' ? new Blob([content]).size : content.length;
+    const words = content.trim() ? content.trim().split(/\s+/).length : 0;
+
+    const newItem: InfinityItem = {
+      id: `doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      userId,
+      name: docName,
+      url: `infinity://doc/${Date.now()}`,
+      provider: 'direct',
+      category: 'documents',
+      mimeType: 'text/markdown',
+      size: blobSize,
+      collectionId: collectionId || null,
+      isFavorite: false,
+      isTrash: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      metadata: {
+        content,
+        wordCount: words,
+        isLocalDocument: true
+      }
     };
 
     await saveItem(userId, newItem);
@@ -347,6 +388,7 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
         setSortOption,
         setSelectedProvider,
         addItemByUrl,
+        createTextDocument,
         editItem,
         moveToTrash,
         restoreFromTrash,

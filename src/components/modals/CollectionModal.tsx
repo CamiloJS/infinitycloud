@@ -70,7 +70,7 @@ export function CollectionModal({
               {collIdToEdit ? <Edit2 size={18} /> : <FolderPlus size={18} />}
             </div>
             <h3 className="font-bold text-base text-slate-800 dark:text-white">
-              {collIdToEdit ? 'Renombrar colección' : 'Nueva colección'}
+              {collIdToEdit ? 'Renombrar carpeta' : 'Nueva carpeta'}
             </h3>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white">
@@ -81,7 +81,7 @@ export function CollectionModal({
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-              Nombre de la colección
+              Nombre de la carpeta
             </label>
             <input
               type="text"

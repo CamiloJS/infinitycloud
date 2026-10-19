@@ -27,7 +27,10 @@ import {
   Layers,
   Sparkles,
   Share2,
-  Globe
+  Globe,
+  Settings,
+  FileEdit,
+  ChevronRight
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -35,9 +38,11 @@ interface SidebarProps {
   onOpenNotionModal: () => void;
   onOpenImportExportModal: () => void;
   onOpen2FaModal: () => void;
+  onOpenAccountSettings: () => void;
   onOpenCreateCollectionModal: () => void;
   onOpenRenameCollectionModal: (collId: string, currentName: string) => void;
   onOpenShareCollectionModal?: (collection: InfinityCollection) => void;
+  onOpenTextEditorModal: () => void;
 }
 
 export function Sidebar({
@@ -45,9 +50,11 @@ export function Sidebar({
   onOpenNotionModal,
   onOpenImportExportModal,
   onOpen2FaModal,
+  onOpenAccountSettings,
   onOpenCreateCollectionModal,
   onOpenRenameCollectionModal,
-  onOpenShareCollectionModal
+  onOpenShareCollectionModal,
+  onOpenTextEditorModal
 }: SidebarProps) {
   const { 
     items, 
@@ -88,14 +95,36 @@ export function Sidebar({
           <Logo size={32} />
         </div>
 
-        {/* Primary Action Button */}
-        <button
-          onClick={onOpenAddModal}
-          className="w-full mb-6 py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-500/10 hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.98] transition-all"
-        >
-          <Plus size={18} />
-          <span>Añadir archivo</span>
-        </button>
+        {/* Action Buttons: Add / Folder / Document */}
+        <div className="space-y-2 mb-6">
+          <button
+            onClick={onOpenAddModal}
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white font-medium text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-500/10 hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.98] transition-all"
+          >
+            <Plus size={18} />
+            <span>Añadir enlace</span>
+          </button>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={onOpenCreateCollectionModal}
+              className="py-2 px-2.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-[0.98]"
+              title="Crear nueva carpeta"
+            >
+              <FolderPlus size={14} className="text-violet-500" />
+              <span>Carpeta</span>
+            </button>
+
+            <button
+              onClick={onOpenTextEditorModal}
+              className="py-2 px-2.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-[0.98]"
+              title="Crear documento de texto"
+            >
+              <FileEdit size={14} className="text-blue-500" />
+              <span>Documento</span>
+            </button>
+          </div>
+        </div>
 
         {/* Main Views */}
         <div className="space-y-1 mb-6">
@@ -188,16 +217,16 @@ export function Sidebar({
           </div>
         </div>
 
-        {/* Collections Section */}
+        {/* Collections / Folders Section */}
         <div>
           <div className="flex items-center justify-between px-3 mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Colecciones
+              Carpetas
             </span>
             <button
               onClick={onOpenCreateCollectionModal}
               className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-              title="Nueva colección"
+              title="Nueva carpeta"
             >
               <Plus size={15} />
             </button>
@@ -301,27 +330,8 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Bottom Profile & Integrations Part */}
+      {/* Bottom Profile & Settings Part */}
       <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 space-y-2">
-        {/* Integrations & Tools Links */}
-        <div className="grid grid-cols-2 gap-1.5 pb-2 border-b border-slate-200 dark:border-slate-800">
-          <button
-            onClick={onOpenNotionModal}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          >
-            <Sparkles size={14} className="text-cyan-500" />
-            <span>Notion</span>
-          </button>
-
-          <button
-            onClick={onOpenImportExportModal}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          >
-            <FolderPlus size={14} className="text-violet-500" />
-            <span>JSON</span>
-          </button>
-        </div>
-
         {/* Theme Switcher */}
         <div className="flex items-center justify-between px-2 py-1 text-xs text-slate-500">
           <span>Tema</span>
@@ -350,10 +360,10 @@ export function Sidebar({
           </div>
         </div>
 
-        {/* User Account / 2FA / Logout */}
+        {/* User Account / Settings / Logout */}
         {user ? (
           <div className="pt-1">
-            <div className="flex items-center justify-between mb-2 px-1">
+            <div className="flex items-center justify-between mb-1 px-1">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-cyan-500 to-violet-500 text-white flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden">
                   {user.photoURL ? (
@@ -382,19 +392,17 @@ export function Sidebar({
               </button>
             </div>
 
-            <div className="flex items-center">
-              <button
-                onClick={onOpen2FaModal}
-                className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
-                  user.twoFactorEnabled
-                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                <ShieldCheck size={14} />
-                <span>{user.twoFactorEnabled ? '2FA Activo' : 'Configurar 2FA'}</span>
-              </button>
-            </div>
+            <button
+              onClick={onOpenAccountSettings}
+              className="w-full mt-2 py-1.5 px-2.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-between transition-colors shadow-sm"
+              title="Ajustes de la cuenta, seguridad 2FA y copias"
+            >
+              <div className="flex items-center gap-2">
+                <Settings size={14} className="text-blue-500" />
+                <span>Ajustes de la cuenta</span>
+              </div>
+              <ChevronRight size={13} className="text-slate-400" />
+            </button>
           </div>
         ) : null}
       </div>

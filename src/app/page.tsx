@@ -26,6 +26,8 @@ import { ImportExportModal } from '@/components/modals/ImportExportModal';
 import { TwoFactorModal } from '@/components/modals/TwoFactorModal';
 import { TwoFactorChallengeModal } from '@/components/modals/TwoFactorChallengeModal';
 import { ShareFolderModal } from '@/components/modals/ShareFolderModal';
+import { AccountSettingsModal } from '@/components/modals/AccountSettingsModal';
+import { TextEditorModal } from '@/components/modals/TextEditorModal';
 import { InfinityItem, InfinityCollection } from '@/types';
 import { 
   Trash2, 
@@ -60,6 +62,9 @@ export default function HomePage() {
   const [notionModalOpen, setNotionModalOpen] = useState<boolean>(false);
   const [importExportModalOpen, setImportExportModalOpen] = useState<boolean>(false);
   const [twoFactorModalOpen, setTwoFactorModalOpen] = useState<boolean>(false);
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState<boolean>(false);
+  const [textEditorOpen, setTextEditorOpen] = useState<boolean>(false);
+  const [editingDocumentItem, setEditingDocumentItem] = useState<InfinityItem | null>(null);
   const [collectionModalOpen, setCollectionModalOpen] = useState<boolean>(false);
   const [editingCollId, setEditingCollId] = useState<string | null>(null);
   const [editingCollName, setEditingCollName] = useState<string>('');
@@ -91,6 +96,11 @@ export default function HomePage() {
   // Active photos list for navigation in lightbox
   const photosList = filteredItems.filter(i => i.category === 'photos');
 
+  const handleOpenTextEditor = (docItem?: InfinityItem | null) => {
+    setEditingDocumentItem(docItem || null);
+    setTextEditorOpen(true);
+  };
+
   const openActualItem = async (item: InfinityItem) => {
     if (item.category === 'photos') {
       setActivePhoto(item);
@@ -100,59 +110,16 @@ export default function HomePage() {
       playTrack(item, filteredItems.filter(i => i.category === 'music'));
       return;
     }
-    if (item.category === 'videos' || item.metadata?.isNotionVideo) {
-      setActiveVideo(item);
-      return;
-    }
 
-    // Check if this item is a link to Notion
+    // Check if this item is from Notion or a video
     const isNotion = item.provider === 'notion' ||
       item.url.includes('notion.so') ||
       item.url.includes('notion.site') ||
       item.url.includes('notion.com');
 
-    if (isNotion) {
-      try {
-        const res = await fetch('/api/notion/extract-page', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: item.metadata?.originalUrl || item.url })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.foundVideo && data.video) {
-            const videoItem: InfinityItem = {
-              ...item,
-              category: 'videos',
-              name: data.video.title || item.name,
-              thumbnailUrl: data.video.coverUrl || item.thumbnailUrl,
-              metadata: {
-                ...item.metadata,
-                isNotionVideo: true,
-                s3Url: data.video.url,
-                notionBlockId: data.video.notionBlockId,
-                notionPageId: data.video.notionPageId,
-                originalUrl: item.metadata?.originalUrl || item.url,
-                sourceType: data.video.sourceType
-              }
-            };
-
-            // Update item in background store
-            editItem(item.id, {
-              category: 'videos',
-              name: videoItem.name,
-              thumbnailUrl: videoItem.thumbnailUrl,
-              metadata: videoItem.metadata
-            }).catch(() => {});
-
-            // Show ONLY the video!
-            setActiveVideo(videoItem);
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn('Error checking Notion video on open:', err);
-      }
+    if (item.category === 'videos' || item.metadata?.isNotionVideo || isNotion) {
+      setActiveVideo(item);
+      return;
     }
 
     if (item.category === 'documents') {
@@ -203,6 +170,7 @@ export default function HomePage() {
         onOpenNotionModal={() => setNotionModalOpen(true)}
         onOpenImportExportModal={() => setImportExportModalOpen(true)}
         onOpen2FaModal={() => setTwoFactorModalOpen(true)}
+        onOpenAccountSettings={() => setAccountSettingsOpen(true)}
         onOpenCreateCollectionModal={() => {
           setEditingCollId(null);
           setEditingCollName('');
@@ -214,6 +182,7 @@ export default function HomePage() {
           setCollectionModalOpen(true);
         }}
         onOpenShareCollectionModal={(coll) => setSharingColl(coll)}
+        onOpenTextEditorModal={() => handleOpenTextEditor()}
       />
 
       {/* Mobile Navigation Drawer */}
@@ -224,11 +193,13 @@ export default function HomePage() {
         onOpenNotionModal={() => setNotionModalOpen(true)}
         onOpenImportExportModal={() => setImportExportModalOpen(true)}
         onOpen2FaModal={() => setTwoFactorModalOpen(true)}
+        onOpenAccountSettings={() => setAccountSettingsOpen(true)}
         onOpenCreateCollectionModal={() => {
           setEditingCollId(null);
           setEditingCollName('');
           setCollectionModalOpen(true);
         }}
+        onOpenTextEditorModal={() => handleOpenTextEditor()}
       />
 
       {/* Main Content Area */}
@@ -358,6 +329,10 @@ export default function HomePage() {
           setActiveDoc(null);
           setActiveVideo(videoItem);
         }}
+        onEditDocument={(docItem) => {
+          setActiveDoc(null);
+          handleOpenTextEditor(docItem);
+        }}
       />
 
       <OtherViewer
@@ -419,6 +394,23 @@ export default function HomePage() {
       <TwoFactorModal
         isOpen={twoFactorModalOpen}
         onClose={() => setTwoFactorModalOpen(false)}
+      />
+
+      <AccountSettingsModal
+        isOpen={accountSettingsOpen}
+        onClose={() => setAccountSettingsOpen(false)}
+        onOpen2FaModal={() => setTwoFactorModalOpen(true)}
+        onOpenImportExportModal={() => setImportExportModalOpen(true)}
+      />
+
+      <TextEditorModal
+        isOpen={textEditorOpen}
+        onClose={() => {
+          setTextEditorOpen(false);
+          setEditingDocumentItem(null);
+        }}
+        initialItem={editingDocumentItem}
+        initialCollectionId={activeCollectionId}
       />
     </div>
   );

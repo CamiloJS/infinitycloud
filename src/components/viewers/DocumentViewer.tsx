@@ -13,7 +13,8 @@ import {
   Copy, 
   Maximize2, 
   Minimize2,
-  Loader2
+  Loader2,
+  Edit3
 } from 'lucide-react';
 import { canDownloadItem, downloadItem } from '@/lib/utils/download';
 
@@ -21,9 +22,10 @@ interface DocumentViewerProps {
   item: InfinityItem | null;
   onClose: () => void;
   onPlayVideo?: (item: InfinityItem) => void;
+  onEditDocument?: (item: InfinityItem) => void;
 }
 
-export function DocumentViewer({ item, onClose, onPlayVideo }: DocumentViewerProps) {
+export function DocumentViewer({ item, onClose, onPlayVideo, onEditDocument }: DocumentViewerProps) {
   const [textContent, setTextContent] = useState<string | null>(null);
   const [parsedCsv, setParsedCsv] = useState<string[][] | null>(null);
   const [loadingText, setLoadingText] = useState<boolean>(false);
@@ -47,6 +49,11 @@ export function DocumentViewer({ item, onClose, onPlayVideo }: DocumentViewerPro
     setLoadingText(false);
 
     if (!item) return;
+
+    if (item.metadata?.content !== undefined && item.metadata?.content !== null) {
+      setTextContent(item.metadata.content);
+      return;
+    }
 
     const directUrl = adapterRegistry.getDirectUrl(item);
     const urlLower = item.url.toLowerCase();
@@ -197,6 +204,19 @@ export function DocumentViewer({ item, onClose, onPlayVideo }: DocumentViewerPro
           </div>
 
           <div className="flex items-center gap-2">
+            {onEditDocument && (item.metadata?.isLocalDocument || item.mimeType === 'text/markdown' || item.mimeType === 'text/plain' || textContent !== null) && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onEditDocument(item);
+                }}
+                className="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                title="Editar documento"
+              >
+                <Edit3 size={18} className="text-blue-500" />
+              </button>
+            )}
+
             {textContent && (
               <button
                 onClick={copyText}
