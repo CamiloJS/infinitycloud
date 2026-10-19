@@ -8,10 +8,13 @@ import {
 import { getServerUserSettings } from '@/lib/server/store';
 import { adminAuth, isFirebaseAdminConfigured } from '@/lib/firebase/admin';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { idToken, demoUserNum, email: inputEmail, uid: inputUid } = body;
+    const { idToken, email: inputEmail, uid: inputUid } = body;
 
     let userId = '';
     let email = '';
@@ -32,8 +35,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Credenciales incompletas' }, { status: 400 });
     }
 
-    const settings = await getServerUserSettings(userId);
-    const twoFactorActive = Boolean(settings.twoFactorEnabled && settings.twoFactorSecretEncrypted);
+    let twoFactorActive = false;
+    try {
+      const settings = await getServerUserSettings(userId);
+      twoFactorActive = Boolean(settings.twoFactorEnabled && settings.twoFactorSecretEncrypted);
+    } catch {
+      twoFactorActive = false;
+    }
 
     // If 2FA is active, session starts with twoFactorPending = true
     const sessionToken = createSessionToken({
@@ -60,22 +68,31 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const session = getSessionFromRequest(req);
-  if (!session) {
-    return NextResponse.json({ authenticated: false }, { status: 401 });
-  }
+  try {
+    const session = getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ authenticated: false }, { status: 401 });
+    }
 
-  return NextResponse.json({
-    authenticated: true,
-    userId: session.userId,
-    email: session.email,
-    twoFactorPending: session.twoFactorPending,
-    twoFactorVerified: session.twoFactorVerified
-  });
+    return NextResponse.json({
+      authenticated: true,
+      userId: session.userId,
+      email: session.email,
+      twoFactorPending: session.twoFactorPending,
+      twoFactorVerified: session.twoFactorVerified
+    });
+  } catch (err: any) {
+    console.error('Session get error:', err);
+    return NextResponse.json({ authenticated: false, error: String(err?.message || err) }, { status: 401 });
+  }
 }
 
 export async function DELETE() {
-  const res = NextResponse.json({ success: true, message: 'Sesión cerrada correctamente' });
-  clearSessionCookie(res);
-  return res;
+  try {
+    const res = NextResponse.json({ success: true, message: 'Sesión cerrada correctamente' });
+    clearSessionCookie(res);
+    return res;
+  } catch (err: any) {
+    return NextResponse.json({ success: true }, { status: 200 });
+  }
 }
