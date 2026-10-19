@@ -16,7 +16,10 @@ export class NotionAdapter implements ProviderAdapter {
         host === 'notion.so' ||
         host.endsWith('.notion.so') ||
         host === 'notion.site' ||
-        host.endsWith('.notion.site')
+        host.endsWith('.notion.site') ||
+        host === 'notion.com' ||
+        host.endsWith('.notion.com') ||
+        host.includes('notion')
       ) {
         return true;
       }

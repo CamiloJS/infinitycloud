@@ -205,5 +205,10 @@ describe('Folder Sharing and Notion Video Extraction', () => {
     // UUID with hyphens
     const uuidUrl = 'https://notion.so/12345678-90ab-cdef-1234-567890abcdef';
     expect(adapter.extractPageOrBlockId(uuidUrl)).toBe('1234567890abcdef1234567890abcdef');
+
+    // app.notion.com URL
+    const appNotionUrl = 'https://app.notion.com/p/camilojaimes/Notion-Cloud-92896c82887c4bb5845b5c00e587bf97';
+    expect(adapter.canHandle(appNotionUrl)).toBe(true);
+    expect(adapter.extractPageOrBlockId(appNotionUrl)).toBe('92896c82887c4bb5845b5c00e587bf97');
   });
 });

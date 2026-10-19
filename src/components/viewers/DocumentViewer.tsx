@@ -54,7 +54,7 @@ export function DocumentViewer({ item, onClose, onPlayVideo }: DocumentViewerPro
       urlLower.endsWith('.csv')
     );
 
-    if (item.provider === 'notion' || item.url.includes('notion.so') || item.url.includes('notion.site')) {
+    if (item.provider === 'notion' || item.url.includes('notion.so') || item.url.includes('notion.site') || item.url.includes('notion.com') || item.url.includes('notion')) {
       fetch('/api/notion/extract-page', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

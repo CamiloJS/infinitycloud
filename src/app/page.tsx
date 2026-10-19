@@ -29,7 +29,6 @@ import { ShareFolderModal } from '@/components/modals/ShareFolderModal';
 import { InfinityItem, InfinityCollection } from '@/types';
 import { 
   Trash2, 
-  Clock, 
   Star, 
   ChevronRight,
   Share2
@@ -109,7 +108,8 @@ export default function HomePage() {
     // Check if this item is a link to Notion
     const isNotion = item.provider === 'notion' ||
       item.url.includes('notion.so') ||
-      item.url.includes('notion.site');
+      item.url.includes('notion.site') ||
+      item.url.includes('notion.com');
 
     if (isNotion) {
       try {
@@ -189,12 +189,6 @@ export default function HomePage() {
     const prevIdx = (currentIdx - 1 + photosList.length) % photosList.length;
     setActivePhoto(photosList[prevIdx]);
   };
-
-  // Recent files (most recent 4 items with thumbnails in active library)
-  const recentItems = items
-    .filter(i => !i.isTrash && i.thumbnailUrl)
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .slice(0, 4);
 
   const activeColl = collections.find(c => c.id === activeCollectionId);
 
@@ -308,49 +302,6 @@ export default function HomePage() {
 
           {/* Category Chips (in main library) */}
           <CategoryCards />
-
-          {/* Recent Files Section with Thumbnails (Only in Main Library when not searching and no active collection) */}
-          {activeView === 'library' && !activeColl && recentItems.length > 0 && (
-            <div className="mb-8">
-              <div className="flex items-center gap-2 mb-3">
-                <Clock size={16} className="text-blue-500" />
-                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">
-                  Archivos recientes
-                </h3>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {recentItems.map(item => (
-                  <div
-                    key={item.id}
-                    onClick={() => handleOpenItem(item)}
-                    className="group relative aspect-[16/10] rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 hover:border-blue-500/40 shadow-sm hover:shadow-lg transition-all cursor-pointer"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={item.thumbnailUrl}
-                      alt={item.name}
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        if (target.src.includes('maxresdefault.jpg')) {
-                          target.src = target.src.replace('maxresdefault.jpg', 'mqdefault.jpg');
-                        }
-                      }}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-2.5">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-white/70 font-mono">
-                        {item.provider}
-                      </span>
-                      <span className="text-xs font-semibold text-white truncate">
-                        {item.name}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Main Grid or List View */}
           {filteredItems.length === 0 ? (

@@ -303,7 +303,8 @@ export async function POST(req: NextRequest) {
         if (chunkRes.ok) {
           const chunkData = await chunkRes.json();
           const blockMap = chunkData?.recordMap?.block || {};
-          const pageBlock = blockMap[formattedId]?.value;
+          const rawPageBlock = blockMap[formattedId]?.value;
+          const pageBlock = rawPageBlock?.value || rawPageBlock;
 
           if (pageBlock) {
             const rawTitle = pageBlock.properties?.title?.[0]?.[0];
@@ -317,7 +318,7 @@ export async function POST(req: NextRequest) {
 
           // Traverse blocks to find video
           for (const [bId, bVal] of Object.entries(blockMap) as [string, any][]) {
-            const val = bVal?.value;
+            const val = bVal?.value?.value || bVal?.value;
             if (!val) continue;
 
             const isVideoBlock = val.type === 'video';
@@ -328,9 +329,35 @@ export async function POST(req: NextRequest) {
               isVideoUrl(val.properties?.source?.[0]?.[0] || val.format?.display_source || '')
             );
 
-            if (isVideoBlock || isFileWithVideo || isEmbedWithVideo) {
-              let rawSource = val.properties?.source?.[0]?.[0] || val.format?.display_source;
-              const caption = val.properties?.caption?.[0]?.[0] || pageTitle;
+            // Also check properties for embedded attachments
+            let propVideoUrl: string | null = null;
+            if (val.properties) {
+              for (const pVal of Object.values(val.properties) as any[]) {
+                if (Array.isArray(pVal)) {
+                  for (const seg of pVal) {
+                    if (Array.isArray(seg)) {
+                      if (typeof seg[0] === 'string' && isVideoUrl(seg[0])) {
+                        propVideoUrl = seg[0];
+                        break;
+                      }
+                      if (Array.isArray(seg[1])) {
+                        for (const sub of seg[1]) {
+                          if (Array.isArray(sub) && sub[0] === 'a' && typeof sub[1] === 'string' && isVideoUrl(sub[1])) {
+                            propVideoUrl = sub[1];
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                if (propVideoUrl) break;
+              }
+            }
+
+            if (isVideoBlock || isFileWithVideo || isEmbedWithVideo || propVideoUrl) {
+              let rawSource = propVideoUrl || val.properties?.source?.[0]?.[0] || val.format?.display_source;
+              const caption = val.properties?.caption?.[0]?.[0] || val.properties?.title?.[0]?.[0] || pageTitle;
               let finalVideoUrl = rawSource;
               const isS3 = Boolean(rawSource && (rawSource.includes('amazonaws.com') || rawSource.includes('notion.so')));
 
@@ -385,9 +412,107 @@ export async function POST(req: NextRequest) {
               }
             }
           }
+
+          // If no video in root blocks, check collections inside recordMap
+          if (chunkData?.recordMap?.collection && chunkData?.recordMap?.collection_view) {
+            for (const cId of Object.keys(chunkData.recordMap.collection)) {
+              for (const cvId of Object.keys(chunkData.recordMap.collection_view)) {
+                try {
+                  const qRes = await fetch('https://www.notion.so/api/v3/queryCollection', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    },
+                    body: JSON.stringify({
+                      collection: { id: cId },
+                      collectionView: { id: cvId },
+                      loader: {
+                        type: 'reducer',
+                        reducers: { collection_group_results: { type: 'results', limit: 50 } },
+                        sort: [],
+                        searchQuery: '',
+                        userTimeZone: 'America/Bogota'
+                      }
+                    })
+                  });
+
+                  if (qRes.ok) {
+                    const qData = await qRes.json();
+                    const qBlocks = qData?.recordMap?.block || {};
+                    for (const [qId, qBVal] of Object.entries(qBlocks) as [string, any][]) {
+                      const qVal = qBVal?.value?.value || qBVal?.value;
+                      if (!qVal) continue;
+
+                      const isQVideo = qVal.type === 'video' ||
+                        (qVal.type === 'file' && qVal.properties?.source?.[0]?.[0]?.match(/\.(mp4|mov|webm|m4v)/i)) ||
+                        ((qVal.type === 'embed' || qVal.type === 'bookmark') && isVideoUrl(qVal.properties?.source?.[0]?.[0] || ''));
+
+                      if (isQVideo) {
+                        const rawSource = qVal.properties?.source?.[0]?.[0] || qVal.format?.display_source;
+                        const caption = qVal.properties?.title?.[0]?.[0] || pageTitle;
+                        if (rawSource) {
+                          return NextResponse.json({
+                            success: true,
+                            foundVideo: true,
+                            video: {
+                              url: rawSource,
+                              title: caption,
+                              caption,
+                              coverUrl: coverUrl || undefined,
+                              notionBlockId: qId,
+                              notionPageId: formattedId,
+                              isExpiringS3: rawSource.includes('amazonaws.com') || rawSource.includes('notion.so'),
+                              sourceType: 'notion_block',
+                              pageTitle,
+                              pageDescription
+                            }
+                          });
+                        }
+                      }
+                    }
+                  }
+                } catch {
+                  // ignore collection query errors
+                }
+              }
+            }
+          }
         }
       } catch (chunkErr) {
         console.warn('Public loadPageChunk error:', chunkErr);
+      }
+    }
+
+    // Try retrieving public Notion page metadata (e.g. Notion site domain)
+    let publicSiteUrl: string | undefined = undefined;
+    if (pageId) {
+      try {
+        const pubRes = await fetch('https://www.notion.so/api/v3/getPublicPageData', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          },
+          body: JSON.stringify({
+            type: 'block-space',
+            name: 'page',
+            blockId: formatNotionUuid(pageId)
+          })
+        });
+        if (pubRes.ok) {
+          const pubData = await pubRes.json();
+          if (pubData?.requireInterstitial && typeof pubData.requireInterstitial === 'string') {
+            publicSiteUrl = pubData.requireInterstitial;
+          } else if (pubData?.publicDomainName) {
+            publicSiteUrl = `https://${pubData.publicDomainName}.notion.site/${pageId}`;
+          }
+          if (pubData?.spaceName && (!pageTitle || pageTitle === 'Página de Notion')) {
+            pageTitle = pubData.spaceName;
+          }
+        }
+      } catch {
+        // ignore public metadata lookup error
       }
     }
 
@@ -553,7 +678,9 @@ export async function POST(req: NextRequest) {
       foundVideo: false,
       pageTitle,
       pageDescription,
-      coverUrl
+      coverUrl,
+      publicSiteUrl,
+      isNotionSite: Boolean(publicSiteUrl)
     });
 
   } catch (error: any) {

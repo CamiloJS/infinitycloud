@@ -40,6 +40,9 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   const [isCoverFit, setIsCoverFit] = useState<boolean>(false);
   const [snapshotSuccess, setSnapshotSuccess] = useState<boolean>(false);
   const [corsRetryState, setCorsRetryState] = useState<'initial' | 'proxy' | 'nocors'>('initial');
+  const [isExtractingNotion, setIsExtractingNotion] = useState<boolean>(false);
+  const [extractedVideo, setExtractedVideo] = useState<any>(null);
+  const [notionSiteUrl, setNotionSiteUrl] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -63,11 +66,69 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     setIsLooping(false);
     setIsCoverFit(false);
     setCorsRetryState('initial');
+    setExtractedVideo(null);
+    setNotionSiteUrl(null);
+    setIsExtractingNotion(false);
 
     if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
       audioCtxRef.current.close().catch(() => {});
       audioCtxRef.current = null;
       gainNodeRef.current = null;
+    }
+
+    if (!item) return;
+
+    // Trigger on-demand Notion video isolation if item is from Notion and doesn't have an isolated direct video stream yet
+    const isNotion = item.provider === 'notion' || 
+                     item.url.includes('notion.so') || 
+                     item.url.includes('notion.site') || 
+                     item.url.includes('notion.com');
+
+    const hasIsolatedStream = Boolean(item.metadata?.s3Url && (
+      item.metadata.s3Url.endsWith('.mp4') ||
+      item.metadata.s3Url.endsWith('.webm') ||
+      item.metadata.s3Url.endsWith('.mov') ||
+      item.metadata.s3Url.includes('youtube.com') ||
+      item.metadata.s3Url.includes('youtu.be') ||
+      item.metadata.s3Url.includes('vimeo.com') ||
+      item.metadata.s3Url.includes('file.notion.so') ||
+      item.metadata.s3Url.includes('amazonaws.com')
+    ));
+
+    if (isNotion && !hasIsolatedStream) {
+      setIsExtractingNotion(true);
+      fetch('/api/notion/extract-page', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: item.metadata?.originalUrl || item.url })
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.foundVideo && data.video) {
+            setExtractedVideo(data.video);
+            editItem(item.id, {
+              category: 'videos',
+              name: data.video.title || item.name,
+              thumbnailUrl: data.video.coverUrl || item.thumbnailUrl,
+              metadata: {
+                ...item.metadata,
+                isNotionVideo: true,
+                s3Url: data.video.url,
+                notionBlockId: data.video.notionBlockId,
+                notionPageId: data.video.notionPageId,
+                originalUrl: item.metadata?.originalUrl || item.url
+              }
+            }).catch(() => {});
+          } else if (data.publicSiteUrl) {
+            setNotionSiteUrl(data.publicSiteUrl);
+          }
+        })
+        .catch(err => {
+          console.warn('Error on-demand extracting Notion video:', err);
+        })
+        .finally(() => {
+          setIsExtractingNotion(false);
+        });
     }
   }, [item?.id]);
 
@@ -211,27 +272,27 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     }
   };
 
-  const targetVideoUrl = item.metadata?.s3Url || item.url;
+  const resolvedVideo = extractedVideo?.url || item.metadata?.s3Url || item.url;
   const isYoutube = (
     item.url.includes('youtube.com') ||
     item.url.includes('youtu.be') ||
-    Boolean(item.metadata?.s3Url?.includes('youtube.com')) ||
-    Boolean(item.metadata?.s3Url?.includes('youtu.be'))
+    Boolean(resolvedVideo.includes('youtube.com')) ||
+    Boolean(resolvedVideo.includes('youtu.be'))
   );
 
   const isVimeo = (
     item.url.includes('vimeo.com') ||
-    Boolean(item.metadata?.s3Url?.includes('vimeo.com'))
+    Boolean(resolvedVideo.includes('vimeo.com'))
   );
 
-  const embedUrl = adapterRegistry.getEmbedUrl(item) || (
+  const embedUrl = adapterRegistry.getEmbedUrl({ ...item, url: resolvedVideo }) || (
     isYoutube
-      ? new YouTubeAdapter().getEmbedUrl({ ...item, url: targetVideoUrl })
-      : (isVimeo ? new VimeoAdapter().getEmbedUrl({ ...item, url: targetVideoUrl }) : null)
+      ? new YouTubeAdapter().getEmbedUrl({ ...item, url: resolvedVideo })
+      : (isVimeo ? new VimeoAdapter().getEmbedUrl({ ...item, url: resolvedVideo }) : null)
   );
 
   const directUrl = adapterRegistry.getDirectUrl(item);
-  const urlLower = targetVideoUrl.toLowerCase();
+  const urlLower = resolvedVideo.toLowerCase();
   const isVideoExt = (
     urlLower.endsWith('.mp4') ||
     urlLower.endsWith('.webm') ||
@@ -241,22 +302,30 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   );
   
   const isDirectVideo = !embedUrl && (
+    Boolean(extractedVideo) ||
+    Boolean(item.metadata?.s3Url && isVideoExt) ||
     item.provider === 'direct' ||
-    (item.provider === 'notion' && item.category === 'videos') ||
-    Boolean(item.metadata?.isNotionVideo) ||
+    Boolean(item.metadata?.isNotionVideo && item.metadata?.s3Url) ||
     Boolean(item.mimeType?.startsWith('video/')) ||
     isVideoExt
   );
 
-  const notionDirectUrl = item.provider === 'notion'
-    ? `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}&url=${encodeURIComponent(item.metadata?.s3Url || item.url)}${item.metadata?.notionBlockId ? `&blockId=${encodeURIComponent(item.metadata.notionBlockId)}` : ''}${item.metadata?.notionPageId ? `&pageId=${encodeURIComponent(item.metadata.notionPageId)}` : ''}`
-    : directUrl;
+  const isNotion = item.provider === 'notion' || 
+                   item.url.includes('notion.so') || 
+                   item.url.includes('notion.site') || 
+                   item.url.includes('notion.com');
 
-  const baseSrc = item.provider === 'notion' ? notionDirectUrl : directUrl;
+  const notionDirectUrl = extractedVideo?.url || (
+    item.provider === 'notion'
+      ? `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}&url=${encodeURIComponent(item.metadata?.s3Url || item.url)}${item.metadata?.notionBlockId ? `&blockId=${encodeURIComponent(item.metadata.notionBlockId)}` : ''}${item.metadata?.notionPageId ? `&pageId=${encodeURIComponent(item.metadata.notionPageId)}` : ''}`
+      : directUrl
+  );
+
+  const baseSrc = item.provider === 'notion' ? notionDirectUrl : (extractedVideo?.url || directUrl);
 
   const effectiveVideoSrc = corsRetryState === 'proxy'
     ? (item.provider === 'notion'
-        ? `${notionDirectUrl}&proxy=1`
+        ? `${notionDirectUrl}${notionDirectUrl.includes('?') ? '&' : '?'}proxy=1`
         : `/api/proxy/media?url=${encodeURIComponent(directUrl || item.url)}`)
     : baseSrc;
 
@@ -313,7 +382,13 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
             isMaximized ? 'w-full h-full flex-1 min-h-0' : 'aspect-video'
           }`}
         >
-          {embedFailed ? (
+          {isExtractingNotion ? (
+            <div className="flex flex-col items-center justify-center p-8 gap-3">
+              <div className="w-10 h-10 rounded-full border-2 border-blue-500/20 border-t-blue-500 animate-spin" />
+              <p className="text-slate-300 font-medium text-sm">Detectando video en Notion...</p>
+              <p className="text-slate-500 text-xs">Conectando con el contenido multimedia</p>
+            </div>
+          ) : embedFailed ? (
             <div className="text-center p-8 max-w-md">
               <AlertCircle size={48} className="mx-auto text-amber-400 mb-3" />
               <h4 className="text-white font-medium text-lg mb-2">Inserción restringida por el proveedor</h4>
@@ -341,7 +416,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
             />
           ) : isDirectVideo ? (
             <video
-              key={`${item.id}_${corsRetryState}`}
+              key={`${item.id}_${corsRetryState}_${extractedVideo ? 'extracted' : 'direct'}`}
               ref={videoRef}
               src={effectiveVideoSrc}
               controls
@@ -351,6 +426,27 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
               onError={handleVideoError}
               className={`w-full h-full ${isCoverFit ? 'object-cover' : 'object-contain'}`}
             />
+          ) : isNotion ? (
+            <div className="text-center p-8 max-w-md">
+              <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-lg">
+                N
+              </div>
+              <h4 className="text-white font-medium text-base mb-1.5">{item.name}</h4>
+              <p className="text-slate-400 text-xs mb-5 leading-relaxed">
+                Esta página o base de datos de Notion no contiene un archivo de video compatible directamente reproducible en el reproductor. Puedes abrirla directamente en Notion o acceder a su vista pública.
+              </p>
+              <div className="flex items-center justify-center gap-3 flex-wrap">
+                <a
+                  href={notionSiteUrl || item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors shadow-lg shadow-blue-600/25"
+                >
+                  <ExternalLink size={14} />
+                  Abrir en {notionSiteUrl ? 'Notion Site' : 'Notion'}
+                </a>
+              </div>
+            </div>
           ) : (
             <div className="text-center p-8">
               <p className="text-slate-400 mb-4">No se puede reproducir directamente este formato en el navegador.</p>
