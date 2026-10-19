@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useItems } from '@/context/ItemsContext';
 import { adapterRegistry } from '@/lib/adapters/registry';
 import { CategoryType, ProviderType } from '@/types';
-import { X, Link2, Check, Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
+import { X, Link2, Check, Sparkles, Loader2, CheckCircle2, Film, Play } from 'lucide-react';
 
 interface AddItemModalProps {
   isOpen: boolean;
@@ -20,6 +20,10 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
   const [detectedProvider, setDetectedProvider] = useState<ProviderType | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [notionVideoDetected, setNotionVideoDetected] = useState<boolean>(false);
+  const [notionVideos, setNotionVideos] = useState<any[]>([]);
+  const [selectedNotionVideo, setSelectedNotionVideo] = useState<any | null>(null);
+  const [directNotionVideoUrl, setDirectNotionVideoUrl] = useState<string>('');
+  const [isSearchingNotionVideos, setIsSearchingNotionVideos] = useState<boolean>(false);
   const [userChangedCategory, setUserChangedCategory] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +37,10 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       setDetectedProvider(null);
       setIsAnalyzing(false);
       setNotionVideoDetected(false);
+      setNotionVideos([]);
+      setSelectedNotionVideo(null);
+      setDirectNotionVideoUrl('');
+      setIsSearchingNotionVideos(false);
       setUserChangedCategory(false);
       setError(null);
     }
@@ -45,6 +53,8 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       setDetectedProvider(null);
       setIsAnalyzing(false);
       setNotionVideoDetected(false);
+      setNotionVideos([]);
+      setSelectedNotionVideo(null);
       return;
     }
 
@@ -54,15 +64,51 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       try {
         const detected = await adapterRegistry.detect(trimmed);
         setDetectedProvider(detected.provider);
+        const isNotion = detected.provider === 'notion' || trimmed.includes('notion.so') || trimmed.includes('notion.site') || trimmed.includes('notion.com');
+
+        if (isNotion) {
+          setIsSearchingNotionVideos(true);
+          fetch('/api/notion/extract-page', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: trimmed })
+          })
+            .then(r => r.json())
+            .then(data => {
+              const vids = data.videos || (data.foundVideo && data.video ? [data.video] : []);
+              setNotionVideos(vids);
+              if (vids.length > 0) {
+                setSelectedNotionVideo(vids[0]);
+                setNotionVideoDetected(true);
+                setCategory('videos');
+                if (!name.trim() || name === 'Video de YouTube' || name.startsWith('Video (') || name === 'Recurso de Notion' || name === 'Página de Notion' || name === 'Notion') {
+                  setName(vids[0].title || data.pageTitle || 'Video de Notion');
+                }
+              } else {
+                setNotionVideoDetected(false);
+                if (data.pageTitle && (!name.trim() || name === 'Recurso de Notion' || name === 'Página de Notion')) {
+                  setName(data.pageTitle);
+                }
+              }
+            })
+            .catch(() => {})
+            .finally(() => setIsSearchingNotionVideos(false));
+        } else {
+          setNotionVideos([]);
+          setSelectedNotionVideo(null);
+          setIsSearchingNotionVideos(false);
+        }
+
         if (detected.metadata?.isNotionVideo) {
           setNotionVideoDetected(true);
           setCategory('videos');
-        } else {
+        } else if (!isNotion) {
           setNotionVideoDetected(false);
           if (!userChangedCategory) {
             setCategory(detected.category);
           }
         }
+
         if (!name.trim() || name === 'Video de YouTube' || name.startsWith('Video (') || name === 'Recurso de Notion' || name === 'Página de Notion') {
           setName(detected.name);
         }
@@ -89,12 +135,31 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
     setSaving(true);
     setError(null);
     try {
-      const isNotionVideo = notionVideoDetected || category === 'videos';
+      const isNotion = detectedProvider === 'notion' || cleanUrl.includes('notion');
+      const customMeta: Record<string, any> = {};
+
+      if (isNotion) {
+        if (directNotionVideoUrl.trim()) {
+          customMeta.s3Url = directNotionVideoUrl.trim();
+          customMeta.isNotionVideo = true;
+          customMeta.originalUrl = cleanUrl;
+        } else if (selectedNotionVideo) {
+          customMeta.s3Url = selectedNotionVideo.url;
+          customMeta.isNotionVideo = true;
+          customMeta.notionBlockId = selectedNotionVideo.notionBlockId;
+          customMeta.notionPageId = selectedNotionVideo.notionPageId;
+          customMeta.originalUrl = cleanUrl;
+        }
+      }
+
+      const finalCat = (customMeta.isNotionVideo || notionVideoDetected) ? 'videos' : (userChangedCategory ? category : undefined);
+
       await addItemByUrl(
         cleanUrl, 
-        name.trim() || undefined, 
-        isNotionVideo ? 'videos' : (userChangedCategory ? category : undefined), 
-        collectionId || null
+        name.trim() || selectedNotionVideo?.title || undefined, 
+        finalCat, 
+        collectionId || null,
+        customMeta
       );
       onClose();
     } catch (err: any) {
@@ -158,17 +223,105 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                 )}
               </div>
             </div>
-            {notionVideoDetected && (
-              <div className="mt-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex items-start gap-2.5 animate-in fade-in duration-200">
-                <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-500" />
-                <div>
-                  <p className="font-semibold text-emerald-700 dark:text-emerald-300">
-                    Video extraído automáticamente de Notion
-                  </p>
-                  <p className="text-[11px] text-emerald-600/90 dark:text-emerald-400/90 mt-0.5">
-                    Se aisló el video principal de la página para que se reproduzca directamente sin el resto de la página. El enlace se mantendrá permanente y se renovará automáticamente sin expirar.
+            {/* Notion Video Selector and Binder */}
+            {(detectedProvider === 'notion' || url.toLowerCase().includes('notion')) && (
+              <div className="mt-3 p-3.5 rounded-xl bg-slate-100 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 space-y-3 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Film size={15} className="text-blue-500" />
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      Configuración de video de Notion
+                    </span>
+                  </div>
+                  {isSearchingNotionVideos && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-blue-500">
+                      <Loader2 size={12} className="animate-spin" />
+                      <span>Buscando videos...</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* If multiple or single videos were found automatically in the page */}
+                {notionVideos.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                      Videos detectados ({notionVideos.length}) - Haz clic para elegir el que deseas reproducir:
+                    </p>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {notionVideos.map((vid, idx) => {
+                        const isSelected = selectedNotionVideo?.url === vid.url && !directNotionVideoUrl.trim();
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              setSelectedNotionVideo(vid);
+                              setDirectNotionVideoUrl('');
+                              setCategory('videos');
+                              setNotionVideoDetected(true);
+                              if (vid.title) setName(vid.title);
+                            }}
+                            className={`w-full text-left p-2.5 rounded-lg border text-xs flex items-center justify-between transition-colors ${
+                              isSelected
+                                ? 'bg-blue-500/10 border-blue-500/40 text-blue-600 dark:text-blue-300 font-semibold'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate pr-2">
+                              <Play size={13} className={isSelected ? 'text-blue-500 fill-blue-500 shrink-0' : 'text-slate-400 shrink-0'} />
+                              <span className="truncate">{vid.title || `Video ${idx + 1}`}</span>
+                            </div>
+                            {isSelected && (
+                              <span className="shrink-0 text-[10px] uppercase font-bold bg-blue-500 text-white px-1.5 py-0.5 rounded">
+                                Seleccionado
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Option to paste direct video stream (.mp4) */}
+                <div className="pt-1">
+                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                    {notionVideos.length > 0 
+                      ? 'O si prefieres, pega el enlace directo del video (.mp4):' 
+                      : 'Elegir / Vincular enlace directo del video (.mp4):'}
+                  </label>
+                  <input
+                    type="url"
+                    value={directNotionVideoUrl}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDirectNotionVideoUrl(val);
+                      if (val.trim()) {
+                        setCategory('videos');
+                        setNotionVideoDetected(true);
+                        try {
+                          const pathname = new URL(val).pathname;
+                          const filename = decodeURIComponent(pathname.split('/').pop() || '');
+                          if (filename && (!name || name === 'Video de Notion' || name === 'Página de Notion' || name === 'Notion Cloud')) {
+                            setName(filename);
+                          }
+                        } catch {}
+                      }
+                    }}
+                    placeholder="https://... o enlace S3/mp4 del video en Notion"
+                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500 font-mono"
+                  />
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                    💡 Copia el enlace del video desde Notion (haz clic en los 3 puntos del video &gt; &quot;Copiar enlace al bloque&quot; o &quot;Ver original&quot;) para aislarlo y reproducirlo directamente.
                   </p>
                 </div>
+
+                {notionVideoDetected && (
+                  <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] flex items-center gap-2">
+                    <CheckCircle2 size={14} className="shrink-0 text-emerald-500" />
+                    <span>Video seleccionado. Se reproducirá con el reproductor nativo de Infinity.</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

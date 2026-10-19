@@ -130,24 +130,48 @@ export async function POST(req: NextRequest) {
         // fallback
       }
 
+      const vid = {
+        id: 'direct_video',
+        url,
+        title,
+        caption: title,
+        isExpiringS3: url.includes('amazonaws.com') || url.includes('notion.so'),
+        sourceType: 'notion_block',
+        pageTitle: title,
+        pageDescription: 'Video extraído de Notion'
+      };
+
       return NextResponse.json({
         success: true,
         foundVideo: true,
-        video: {
-          url,
-          title,
-          caption: title,
-          isExpiringS3: url.includes('amazonaws.com') || url.includes('notion.so'),
-          sourceType: 'notion_block',
-          pageTitle: title,
-          pageDescription: 'Video extraído de Notion'
-        }
+        video: vid,
+        videos: [vid]
       });
     }
 
     let pageTitle = 'Página de Notion';
     let pageDescription = '';
     let coverUrl: string | undefined = undefined;
+    const extractedVideos: any[] = [];
+
+    function addExtractedVideo(v: any) {
+      if (!v || !v.url) return;
+      if (!extractedVideos.some(existing => existing.url === v.url)) {
+        extractedVideos.push({
+          id: v.id || `vid_${extractedVideos.length}_${Date.now()}`,
+          url: v.url,
+          title: v.title || pageTitle,
+          caption: v.caption || v.title || pageTitle,
+          coverUrl: v.coverUrl || coverUrl,
+          notionBlockId: v.notionBlockId,
+          notionPageId: v.notionPageId,
+          isExpiringS3: v.isExpiringS3,
+          sourceType: v.sourceType || 'notion_block',
+          pageTitle,
+          pageDescription
+        });
+      }
+    }
 
     // Check if logged in user has private Notion integration token
     let notionClient: any = null;
@@ -272,11 +296,7 @@ export async function POST(req: NextRequest) {
 
         const foundOfficial = await scanBlocksRecursive(formattedId);
         if (foundOfficial) {
-          return NextResponse.json({
-            success: true,
-            foundVideo: true,
-            video: foundOfficial
-          });
+          addExtractedVideo(foundOfficial);
         }
       } catch (officialErr) {
         console.warn('Official Notion API lookup error, falling back to public extraction:', officialErr);
@@ -399,21 +419,18 @@ export async function POST(req: NextRequest) {
               }
 
               if (finalVideoUrl) {
-                return NextResponse.json({
-                  success: true,
-                  foundVideo: true,
-                  video: {
-                    url: finalVideoUrl,
-                    title: caption || pageTitle,
-                    caption,
-                    coverUrl: coverUrl || undefined,
-                    notionBlockId: bId,
-                    notionPageId: formattedId,
-                    isExpiringS3: isS3,
-                    sourceType: isS3 ? 'notion_block' : 'embed',
-                    pageTitle,
-                    pageDescription
-                  }
+                addExtractedVideo({
+                  id: bId,
+                  url: finalVideoUrl,
+                  title: caption || pageTitle,
+                  caption,
+                  coverUrl: coverUrl || undefined,
+                  notionBlockId: bId,
+                  notionPageId: formattedId,
+                  isExpiringS3: isS3,
+                  sourceType: isS3 ? 'notion_block' : 'embed',
+                  pageTitle,
+                  pageDescription
                 });
               }
             }
@@ -529,21 +546,18 @@ export async function POST(req: NextRequest) {
                         }
                       }
 
-                      return NextResponse.json({
-                        success: true,
-                        foundVideo: true,
-                        video: {
-                          url: finalVideoUrl,
-                          title: caption,
-                          caption,
-                          coverUrl: coverUrl || undefined,
-                          notionBlockId: qId,
-                          notionPageId: formattedId,
-                          isExpiringS3: isS3,
-                          sourceType: isS3 ? 'notion_block' : 'embed',
-                          pageTitle,
-                          pageDescription
-                        }
+                      addExtractedVideo({
+                        id: qId,
+                        url: finalVideoUrl,
+                        title: caption,
+                        caption,
+                        coverUrl: coverUrl || undefined,
+                        notionBlockId: qId,
+                        notionPageId: formattedId,
+                        isExpiringS3: isS3,
+                        sourceType: isS3 ? 'notion_block' : 'embed',
+                        pageTitle,
+                        pageDescription
                       });
                     }
                   }
@@ -641,21 +655,18 @@ export async function POST(req: NextRequest) {
                 const caption = val.properties?.caption?.[0]?.[0] || pageTitle;
 
                 if (videoSrc) {
-                  return NextResponse.json({
-                    success: true,
-                    foundVideo: true,
-                    video: {
-                      url: videoSrc,
-                      title: caption || pageTitle,
-                      caption,
-                      coverUrl: coverUrl || undefined,
-                      notionBlockId: bId,
-                      notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
-                      isExpiringS3: videoSrc.includes('amazonaws.com') || videoSrc.includes('notion.so'),
-                      sourceType: 'notion_block',
-                      pageTitle,
-                      pageDescription
-                    }
+                  addExtractedVideo({
+                    id: bId,
+                    url: videoSrc,
+                    title: caption || pageTitle,
+                    caption,
+                    coverUrl: coverUrl || undefined,
+                    notionBlockId: bId,
+                    notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+                    isExpiringS3: videoSrc.includes('amazonaws.com') || videoSrc.includes('notion.so'),
+                    sourceType: 'notion_block',
+                    pageTitle,
+                    pageDescription
                   });
                 }
               }
@@ -668,59 +679,50 @@ export async function POST(req: NextRequest) {
         // 4. Check for direct S3 / Notion video links in HTML
         const s3VideoMatch = html.match(/https?:\/\/(?:prod-files-secure\.s3\.us-west-2\.amazonaws\.com|file\.notion\.so\/f\/f\/)[^"'\s<>]+\.(?:mp4|webm|mov|m4v)(?:\?[^"'\s<>]*)?/i);
         if (s3VideoMatch && s3VideoMatch[0]) {
-          return NextResponse.json({
-            success: true,
-            foundVideo: true,
-            video: {
-              url: s3VideoMatch[0],
-              title: pageTitle,
-              caption: pageTitle,
-              coverUrl,
-              notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
-              isExpiringS3: true,
-              sourceType: 'notion_block',
-              pageTitle,
-              pageDescription
-            }
+          addExtractedVideo({
+            id: 'scrape_s3',
+            url: s3VideoMatch[0],
+            title: pageTitle,
+            caption: pageTitle,
+            coverUrl,
+            notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+            isExpiringS3: true,
+            sourceType: 'notion_block',
+            pageTitle,
+            pageDescription
           });
         }
 
         // 5. Check for embedded YouTube / Vimeo in Notion page HTML
         const ytMatch = html.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)[a-zA-Z0-9_-]{11}/i);
         if (ytMatch && ytMatch[0]) {
-          return NextResponse.json({
-            success: true,
-            foundVideo: true,
-            video: {
-              url: ytMatch[0],
-              title: pageTitle,
-              caption: pageTitle,
-              coverUrl,
-              notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
-              isExpiringS3: false,
-              sourceType: 'youtube',
-              pageTitle,
-              pageDescription
-            }
+          addExtractedVideo({
+            id: 'scrape_yt',
+            url: ytMatch[0],
+            title: pageTitle,
+            caption: pageTitle,
+            coverUrl,
+            notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+            isExpiringS3: false,
+            sourceType: 'youtube',
+            pageTitle,
+            pageDescription
           });
         }
 
         const vimeoMatch = html.match(/https?:\/\/(?:player\.)?vimeo\.com\/(?:video\/)?\d+/i);
         if (vimeoMatch && vimeoMatch[0]) {
-          return NextResponse.json({
-            success: true,
-            foundVideo: true,
-            video: {
-              url: vimeoMatch[0],
-              title: pageTitle,
-              caption: pageTitle,
-              coverUrl,
-              notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
-              isExpiringS3: false,
-              sourceType: 'embed',
-              pageTitle,
-              pageDescription
-            }
+          addExtractedVideo({
+            id: 'scrape_vimeo',
+            url: vimeoMatch[0],
+            title: pageTitle,
+            caption: pageTitle,
+            coverUrl,
+            notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+            isExpiringS3: false,
+            sourceType: 'embed',
+            pageTitle,
+            pageDescription
           });
         }
 
@@ -730,20 +732,17 @@ export async function POST(req: NextRequest) {
 
         if (genericVideoMatch) {
           const videoUrl = genericVideoMatch[1] || genericVideoMatch[0];
-          return NextResponse.json({
-            success: true,
-            foundVideo: true,
-            video: {
-              url: videoUrl,
-              title: pageTitle,
-              caption: pageTitle,
-              coverUrl,
-              notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
-              isExpiringS3: videoUrl.includes('amazonaws.com') || videoUrl.includes('notion.so'),
-              sourceType: 'notion_block',
-              pageTitle,
-              pageDescription
-            }
+          addExtractedVideo({
+            id: 'scrape_generic',
+            url: videoUrl,
+            title: pageTitle,
+            caption: pageTitle,
+            coverUrl,
+            notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+            isExpiringS3: videoUrl.includes('amazonaws.com') || videoUrl.includes('notion.so'),
+            sourceType: 'notion_block',
+            pageTitle,
+            pageDescription
           });
         }
       }
@@ -751,10 +750,12 @@ export async function POST(req: NextRequest) {
       console.warn('HTML scraping fallback error:', scrapeErr);
     }
 
-    // No video found on this page
+    // Return all extracted videos and page metadata
     return NextResponse.json({
       success: true,
-      foundVideo: false,
+      foundVideo: extractedVideos.length > 0,
+      video: extractedVideos[0] || null,
+      videos: extractedVideos,
       pageTitle,
       pageDescription,
       coverUrl,

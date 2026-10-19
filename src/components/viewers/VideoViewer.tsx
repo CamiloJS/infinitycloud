@@ -22,7 +22,10 @@ import {
   Check,
   Zap,
   Ratio,
-  CheckCircle2
+  CheckCircle2,
+  Film,
+  Play,
+  Loader2
 } from 'lucide-react';
 
 interface VideoViewerProps {
@@ -46,6 +49,10 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   const [notionSiteUrl, setNotionSiteUrl] = useState<string | null>(null);
   const [notionPageTitle, setNotionPageTitle] = useState<string | null>(null);
   const [notionCoverUrl, setNotionCoverUrl] = useState<string | null>(null);
+  const [notionVideos, setNotionVideos] = useState<any[]>([]);
+  const [linkVideoInput, setLinkVideoInput] = useState<string>('');
+  const [isSavingVideoLink, setIsSavingVideoLink] = useState<boolean>(false);
+  const [showLinkVideoModal, setShowLinkVideoModal] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -73,6 +80,9 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     setNotionSiteUrl(null);
     setNotionPageTitle(null);
     setNotionCoverUrl(null);
+    setNotionVideos([]);
+    setLinkVideoInput('');
+    setShowLinkVideoModal(false);
     setIsExtractingNotion(false);
 
     if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
@@ -82,6 +92,15 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     }
 
     if (!item) return;
+
+    // Check if the item already has a direct Notion video or S3 URL bound
+    if (item.metadata?.s3Url) {
+      setExtractedVideo({
+        id: item.metadata.notionBlockId || 'saved_video',
+        url: item.metadata.s3Url,
+        title: item.name
+      });
+    }
 
     // Trigger on-demand Notion video isolation if item is from Notion and doesn't have an isolated direct video stream yet
     const isNotion = item.provider === 'notion' || 
@@ -109,6 +128,8 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
       })
         .then(r => r.json())
         .then(data => {
+          const vids = data.videos || (data.foundVideo && data.video ? [data.video] : []);
+          setNotionVideos(vids);
           if (data.foundVideo && data.video) {
             setExtractedVideo(data.video);
             editItem(item.id, {
@@ -279,6 +300,36 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     }
   };
 
+  const handleSelectOrLinkVideo = async (videoUrl: string, videoTitle?: string) => {
+    if (!videoUrl.trim() || !item) return;
+    setIsSavingVideoLink(true);
+    try {
+      const cleanVidUrl = videoUrl.trim();
+      const finalTitle = videoTitle || item.name;
+      await editItem(item.id, {
+        category: 'videos',
+        mimeType: 'video/mp4',
+        name: finalTitle,
+        metadata: {
+          ...item.metadata,
+          isNotionVideo: true,
+          s3Url: cleanVidUrl,
+          originalUrl: item.metadata?.originalUrl || item.url
+        }
+      });
+      setExtractedVideo({
+        id: 'custom_linked',
+        url: cleanVidUrl,
+        title: finalTitle
+      });
+      setShowLinkVideoModal(false);
+    } catch (err) {
+      console.error('Error linking video:', err);
+    } finally {
+      setIsSavingVideoLink(false);
+    }
+  };
+
   const resolvedVideo = extractedVideo?.url || item.metadata?.s3Url || item.url;
   const isYoutube = (
     item.url.includes('youtube.com') ||
@@ -364,6 +415,17 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
       >
         {/* Minimalist Top Icons - ZERO text, strictly above video frame */}
         <div className="w-full flex items-center justify-end px-3 py-1.5 bg-slate-950 shrink-0 gap-2">
+          {isNotion && (
+            <button
+              onClick={() => setShowLinkVideoModal(true)}
+              className="p-2 rounded-xl bg-slate-900/90 hover:bg-blue-600/20 text-slate-300 hover:text-blue-400 transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center"
+              title="Elegir o vincular video de Notion"
+              aria-label="Elegir o vincular video de Notion"
+            >
+              <Film size={16} />
+            </button>
+          )}
+
           <button
             onClick={toggleMaximize}
             className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center"
@@ -383,6 +445,82 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
           </button>
         </div>
 
+        {/* Floating Modal to choose/link Notion video at any time */}
+        {showLinkVideoModal && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Film size={16} className="text-blue-500" />
+                  <h4 className="text-sm font-bold text-white">Elegir o vincular video de Notion</h4>
+                </div>
+                <button
+                  onClick={() => setShowLinkVideoModal(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {notionVideos.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-300 font-medium">Videos encontrados en la página ({notionVideos.length}):</p>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {notionVideos.map((vid, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleSelectOrLinkVideo(vid.url, vid.title)}
+                        disabled={isSavingVideoLink}
+                        className="w-full text-left p-2.5 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/20 text-white text-xs flex items-center justify-between transition-colors"
+                      >
+                        <span className="truncate pr-2 font-medium">{vid.title || `Video ${idx + 1}`}</span>
+                        <span className="shrink-0 text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded">
+                          Elegir
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label className="block text-xs text-slate-300 font-medium">
+                  Enlace directo del video (.mp4):
+                </label>
+                <input
+                  type="url"
+                  value={linkVideoInput}
+                  onChange={(e) => setLinkVideoInput(e.target.value)}
+                  placeholder="https://... o enlace S3/mp4 de Notion"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white outline-none focus:border-blue-500 font-mono"
+                />
+                <p className="text-[10px] text-slate-400">
+                  Copia el enlace del video desde Notion y pégalo aquí para reproducirlo.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowLinkVideoModal(false)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectOrLinkVideo(linkVideoInput)}
+                  disabled={!linkVideoInput.trim() || isSavingVideoLink}
+                  className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-1.5"
+                >
+                  {isSavingVideoLink ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                  <span>Guardar y Reproducir</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Video Player Display */}
         <div 
           className={`relative w-full bg-black flex items-center justify-center ${
@@ -395,9 +533,9 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
               <p className="text-slate-300 font-medium text-sm">Detectando video en Notion...</p>
               <p className="text-slate-500 text-xs">Conectando con el contenido multimedia</p>
             </div>
-          ) : isNotion && !extractedVideo ? (
-            <div className="text-center p-6 sm:p-8 max-w-lg select-text">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shadow-xl">
+          ) : isNotion && !extractedVideo && !item.metadata?.s3Url ? (
+            <div className="text-center p-5 sm:p-7 max-w-lg select-text max-h-[85vh] overflow-y-auto w-full">
+              <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shadow-xl">
                 {notionCoverUrl || item.thumbnailUrl ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={notionCoverUrl || item.thumbnailUrl} alt="Notion" className="w-full h-full object-cover" />
@@ -406,43 +544,93 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                 )}
               </div>
 
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold mb-3">
-                <CheckCircle2 size={13} />
-                <span>Página pública de Notion verificada</span>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold mb-2">
+                <Film size={13} />
+                <span>Página de Notion</span>
               </div>
 
-              <h3 className="text-white font-bold text-lg mb-2">
+              <h3 className="text-white font-bold text-base sm:text-lg mb-1">
                 {notionPageTitle || item.name || 'Notion Cloud'}
               </h3>
 
-              <p className="text-slate-400 text-xs sm:text-sm mb-6 leading-relaxed max-w-md mx-auto">
-                Este enlace es un espacio de trabajo o página de documentos de Notion disponible públicamente. Como es una página interactiva con documentos y colecciones (sin un archivo de video único incrustado), puedes explorarla interactivamente en la vista pública o en la app de Notion.
-              </p>
+              {/* Videos found on page */}
+              {notionVideos.length > 0 && (
+                <div className="my-3 text-left p-3 rounded-xl bg-white/5 border border-white/10 space-y-2">
+                  <p className="text-xs font-semibold text-slate-300">
+                    Videos detectados en esta página ({notionVideos.length}):
+                  </p>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {notionVideos.map((vid, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleSelectOrLinkVideo(vid.url, vid.title)}
+                        disabled={isSavingVideoLink}
+                        className="w-full text-left p-2.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-white text-xs flex items-center justify-between transition-all"
+                      >
+                        <div className="flex items-center gap-2 truncate pr-2">
+                          <Play size={13} className="text-blue-400 fill-blue-400 shrink-0" />
+                          <span className="truncate font-medium">{vid.title || `Video ${idx + 1}`}</span>
+                        </div>
+                        <span className="shrink-0 text-[10px] bg-blue-500 text-white font-bold px-2 py-0.5 rounded">
+                          Reproducir
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-              <div className="flex items-center justify-center gap-3 flex-wrap mb-4">
-                <a
-                  href={notionSiteUrl || `https://camilojaimes.notion.site/Notion-Cloud-92896c82887c4bb5845b5c00e587bf97`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs sm:text-sm transition-all shadow-lg shadow-blue-600/30 active:scale-95"
-                >
-                  <ExternalLink size={15} />
-                  Abrir en Notion Site público
-                </a>
+              {/* Direct Video Binder Form */}
+              <div className="my-3 text-left p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-2">
+                <p className="text-xs font-semibold text-slate-300">
+                  {notionVideos.length > 0 
+                    ? 'O vincular enlace directo del video (.mp4):' 
+                    : 'Elegir o vincular video de Notion (.mp4):'}
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="url"
+                    value={linkVideoInput}
+                    onChange={(e) => setLinkVideoInput(e.target.value)}
+                    placeholder="https://... o enlace S3/mp4 del video"
+                    className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-blue-500 font-mono"
+                  />
+                  <button
+                    onClick={() => handleSelectOrLinkVideo(linkVideoInput)}
+                    disabled={!linkVideoInput.trim() || isSavingVideoLink}
+                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all shrink-0 flex items-center justify-center gap-1.5 active:scale-95 shadow-md shadow-blue-600/20"
+                  >
+                    {isSavingVideoLink ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                    <span>Guardar y Reproducir</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  💡 Haz clic en los 3 puntos del video en Notion y selecciona &quot;Copiar enlace al bloque&quot; o &quot;Ver original&quot; (.mp4) para reproducirlo directamente aquí.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-center gap-2.5 flex-wrap pt-1">
+                {notionSiteUrl && (
+                  <a
+                    href={notionSiteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-medium text-xs transition-all border border-slate-700/80"
+                  >
+                    <ExternalLink size={13} />
+                    Ver en Notion Site público
+                  </a>
+                )}
                 <a
                   href={item.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-medium text-xs sm:text-sm transition-all border border-slate-700/80 active:scale-95"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-medium text-xs transition-all border border-slate-700/80"
                 >
-                  <ExternalLink size={15} />
+                  <ExternalLink size={13} />
                   Abrir en Notion
                 </a>
               </div>
-
-              <p className="text-slate-500 text-[11px] max-w-sm mx-auto">
-                💡 Si agregas un video (.mp4) dentro de una página de Notion, Infinity lo extraerá y reproducirá automáticamente aquí.
-              </p>
             </div>
           ) : embedFailed ? (
             <div className="text-center p-8 max-w-md">

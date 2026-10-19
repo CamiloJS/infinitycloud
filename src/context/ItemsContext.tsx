@@ -46,7 +46,13 @@ interface ItemsContextType {
   setSortOption: (sort: SortOption) => void;
   setSelectedProvider: (prov: ProviderType | 'all') => void;
 
-  addItemByUrl: (url: string, customName?: string, customCategory?: CategoryType, collectionId?: string | null) => Promise<InfinityItem>;
+  addItemByUrl: (
+    url: string, 
+    customName?: string, 
+    customCategory?: CategoryType, 
+    collectionId?: string | null,
+    customMetadata?: Record<string, any>
+  ) => Promise<InfinityItem>;
   editItem: (id: string, updates: Partial<InfinityItem>) => Promise<void>;
   moveToTrash: (id: string) => Promise<void>;
   restoreFromTrash: (id: string) => Promise<void>;
@@ -128,31 +134,43 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
     url: string, 
     customName?: string, 
     customCategory?: CategoryType, 
-    collectionId?: string | null
+    collectionId?: string | null,
+    customMetadata?: Record<string, any>
   ): Promise<InfinityItem> => {
     const detected = await adapterRegistry.detect(url);
-    const isNotionVideo = Boolean(detected.metadata?.isNotionVideo || (detected.provider === 'notion' && detected.category === 'videos'));
-    const finalName = customName?.trim() || detected.name;
+    const isNotionVideo = Boolean(
+      customMetadata?.isNotionVideo || 
+      detected.metadata?.isNotionVideo || 
+      (detected.provider === 'notion' && detected.category === 'videos')
+    );
+    const finalName = customName?.trim() || customMetadata?.title || detected.name;
     const finalCategory = isNotionVideo ? 'videos' : (customCategory || detected.category);
-    const finalUrl = (detected.metadata?.isNotionVideo && detected.metadata?.s3Url) 
-      ? detected.metadata.s3Url 
-      : url;
+    const finalUrl = customMetadata?.s3Url || 
+      ((detected.metadata?.isNotionVideo && detected.metadata?.s3Url) 
+        ? detected.metadata.s3Url 
+        : url);
+
+    const mergedMetadata = {
+      ...(detected.metadata || {}),
+      ...(customMetadata || {}),
+      isNotionVideo: isNotionVideo ? true : detected.metadata?.isNotionVideo
+    };
 
     const newItem: InfinityItem = {
       id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       userId,
       name: finalName,
       url: finalUrl,
-      provider: detected.provider,
+      provider: customMetadata?.provider || detected.provider,
       category: finalCategory,
-      mimeType: detected.mimeType,
-      thumbnailUrl: detected.thumbnailUrl,
+      mimeType: detected.mimeType || (isNotionVideo ? 'video/mp4' : undefined),
+      thumbnailUrl: customMetadata?.thumbnailUrl || detected.thumbnailUrl,
       collectionId: collectionId || null,
       isFavorite: false,
       isTrash: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      metadata: detected.metadata || {}
+      metadata: mergedMetadata
     };
 
     await saveItem(userId, newItem);
