@@ -14,7 +14,31 @@ import { ExportData, ExportDataSchema } from '../validation/schemas';
 const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
 const isFirestoreActive = isFirebaseConfigured && !isTestEnv;
 
-// Helper for local storage simulation when Firebase credentials aren't active
+/**
+ * Deep sanitization for Firestore:
+ * Strips any undefined fields and replaces invalid structures so Firestore never throws
+ * "Unsupported field value: undefined"
+ */
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return null as any;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeForFirestore(item)) as any;
+  }
+  if (typeof data === 'object') {
+    const clean: Record<string, any> = {};
+    for (const [key, val] of Object.entries(data as Record<string, any>)) {
+      if (val !== undefined) {
+        clean[key] = sanitizeForFirestore(val);
+      }
+    }
+    return clean as T;
+  }
+  return data;
+}
+
+// Helper for local storage persistence
 function getLocalKey(userId: string, type: string) {
   return `infinity_${userId}_${type}`;
 }
@@ -39,45 +63,82 @@ function setLocalData<T>(userId: string, type: string, data: T[]) {
 }
 
 export async function fetchUserItems(userId: string): Promise<InfinityItem[]> {
+  const localItems = getLocalData<InfinityItem>(userId, 'items');
+
   if (!isFirestoreActive) {
-    return getLocalData<InfinityItem>(userId, 'items');
+    return localItems;
   }
 
   try {
     const colRef = collection(db, 'users', userId, 'items');
     const snapshot = await getDocs(colRef);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as InfinityItem));
+    const firestoreItems = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as InfinityItem));
+
+    if (firestoreItems.length > 0) {
+      // Merge with any local items that haven't synced yet
+      const firestoreIds = new Set(firestoreItems.map(i => i.id));
+      const pendingLocal = localItems.filter(i => !firestoreIds.has(i.id));
+
+      if (pendingLocal.length > 0) {
+        // Sync pending local items up to Firestore in background
+        for (const item of pendingLocal) {
+          try {
+            const docRef = doc(db, 'users', userId, 'items', item.id);
+            await setDoc(docRef, sanitizeForFirestore(item), { merge: true });
+          } catch (e) {
+            console.warn('Sync pending item to firestore error:', e);
+          }
+        }
+      }
+
+      const allItems = [...firestoreItems, ...pendingLocal].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      setLocalData(userId, 'items', allItems);
+      return allItems;
+    } else if (localItems.length > 0) {
+      // Firestore had 0 items, but local cache has items! Auto-recover and sync to Firestore
+      for (const item of localItems) {
+        try {
+          const docRef = doc(db, 'users', userId, 'items', item.id);
+          await setDoc(docRef, sanitizeForFirestore(item), { merge: true });
+        } catch (e) {
+          console.warn('Recovery save to firestore error:', e);
+        }
+      }
+      return localItems;
+    }
+
+    return [];
   } catch (error) {
     console.warn('Firestore fetch failed, falling back to local user store:', error);
-    return getLocalData<InfinityItem>(userId, 'items');
+    return localItems;
   }
 }
 
 export async function saveItem(userId: string, item: InfinityItem): Promise<void> {
-  const itemToSave = { ...item, userId, updatedAt: Date.now() };
+  const cleanItem = sanitizeForFirestore<InfinityItem>({
+    ...item,
+    userId,
+    updatedAt: Date.now()
+  });
 
-  if (!isFirestoreActive) {
-    const items = getLocalData<InfinityItem>(userId, 'items');
-    const existingIndex = items.findIndex(i => i.id === item.id);
-    if (existingIndex >= 0) {
-      items[existingIndex] = itemToSave;
-    } else {
-      items.unshift(itemToSave);
-    }
-    setLocalData(userId, 'items', items);
-    return;
+  // 1. Always update local storage first so data is instantly preserved
+  const items = getLocalData<InfinityItem>(userId, 'items');
+  const existingIndex = items.findIndex(i => i.id === cleanItem.id);
+  if (existingIndex >= 0) {
+    items[existingIndex] = cleanItem;
+  } else {
+    items.unshift(cleanItem);
   }
+  setLocalData(userId, 'items', items);
 
-  try {
-    const docRef = doc(db, 'users', userId, 'items', item.id);
-    await setDoc(docRef, itemToSave, { merge: true });
-  } catch (error) {
-    console.warn('Firestore write failed, saving to local user store:', error);
-    const items = getLocalData<InfinityItem>(userId, 'items');
-    const idx = items.findIndex(i => i.id === item.id);
-    if (idx >= 0) items[idx] = itemToSave;
-    else items.unshift(itemToSave);
-    setLocalData(userId, 'items', items);
+  // 2. Persist to Firestore
+  if (isFirestoreActive) {
+    try {
+      const docRef = doc(db, 'users', userId, 'items', cleanItem.id);
+      await setDoc(docRef, cleanItem, { merge: true });
+    } catch (error) {
+      console.warn('Firestore write failed, kept in local store:', error);
+    }
   }
 }
 
@@ -86,28 +147,26 @@ export async function updateItem(
   itemId: string, 
   updates: Partial<InfinityItem>
 ): Promise<void> {
-  const mergedUpdates = { ...updates, updatedAt: Date.now() };
+  const cleanUpdates = sanitizeForFirestore({
+    ...updates,
+    updatedAt: Date.now()
+  });
 
-  if (!isFirestoreActive) {
-    const items = getLocalData<InfinityItem>(userId, 'items');
-    const idx = items.findIndex(i => i.id === itemId);
-    if (idx >= 0) {
-      items[idx] = { ...items[idx], ...mergedUpdates };
-      setLocalData(userId, 'items', items);
-    }
-    return;
+  // 1. Update local storage
+  const items = getLocalData<InfinityItem>(userId, 'items');
+  const idx = items.findIndex(i => i.id === itemId);
+  if (idx >= 0) {
+    items[idx] = { ...items[idx], ...cleanUpdates };
+    setLocalData(userId, 'items', items);
   }
 
-  try {
-    const docRef = doc(db, 'users', userId, 'items', itemId);
-    await updateDoc(docRef, mergedUpdates);
-  } catch (error) {
-    console.warn('Firestore update failed, falling back:', error);
-    const items = getLocalData<InfinityItem>(userId, 'items');
-    const idx = items.findIndex(i => i.id === itemId);
-    if (idx >= 0) {
-      items[idx] = { ...items[idx], ...mergedUpdates };
-      setLocalData(userId, 'items', items);
+  // 2. Update Firestore
+  if (isFirestoreActive) {
+    try {
+      const docRef = doc(db, 'users', userId, 'items', itemId);
+      await updateDoc(docRef, cleanUpdates);
+    } catch (error) {
+      console.warn('Firestore update failed, kept in local store:', error);
     }
   }
 }
@@ -116,7 +175,7 @@ export async function moveItemToTrash(userId: string, itemId: string): Promise<v
   await updateItem(userId, itemId, {
     isTrash: true,
     trashedAt: Date.now(),
-    isFavorite: false // Automatically unfavorite when sent to trash
+    isFavorite: false
   });
 }
 
@@ -128,20 +187,18 @@ export async function restoreItemFromTrash(userId: string, itemId: string): Prom
 }
 
 export async function permanentlyDeleteItem(userId: string, itemId: string): Promise<void> {
-  if (!isFirestoreActive) {
-    const items = getLocalData<InfinityItem>(userId, 'items');
-    const filtered = items.filter(i => i.id !== itemId);
-    setLocalData(userId, 'items', filtered);
-    return;
-  }
+  // 1. Remove from local store
+  const items = getLocalData<InfinityItem>(userId, 'items');
+  setLocalData(userId, 'items', items.filter(i => i.id !== itemId));
 
-  try {
-    const docRef = doc(db, 'users', userId, 'items', itemId);
-    await deleteDoc(docRef);
-  } catch (error) {
-    console.warn('Firestore delete failed:', error);
-    const items = getLocalData<InfinityItem>(userId, 'items');
-    setLocalData(userId, 'items', items.filter(i => i.id !== itemId));
+  // 2. Remove from Firestore
+  if (isFirestoreActive) {
+    try {
+      const docRef = doc(db, 'users', userId, 'items', itemId);
+      await deleteDoc(docRef);
+    } catch (error) {
+      console.warn('Firestore delete failed:', error);
+    }
   }
 }
 
@@ -156,41 +213,74 @@ export async function emptyTrash(userId: string): Promise<void> {
 
 // Collections
 export async function fetchUserCollections(userId: string): Promise<InfinityCollection[]> {
+  const localColls = getLocalData<InfinityCollection>(userId, 'collections');
+
   if (!isFirestoreActive) {
-    return getLocalData<InfinityCollection>(userId, 'collections');
+    return localColls;
   }
 
   try {
     const colRef = collection(db, 'users', userId, 'collections');
     const snapshot = await getDocs(colRef);
-    return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as InfinityCollection));
+    const firestoreColls = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as InfinityCollection));
+
+    if (firestoreColls.length > 0) {
+      const firestoreIds = new Set(firestoreColls.map(c => c.id));
+      const pendingLocal = localColls.filter(c => !firestoreIds.has(c.id));
+
+      if (pendingLocal.length > 0) {
+        for (const coll of pendingLocal) {
+          try {
+            const docRef = doc(db, 'users', userId, 'collections', coll.id);
+            await setDoc(docRef, sanitizeForFirestore(coll), { merge: true });
+          } catch (e) {
+            console.warn('Sync pending collection error:', e);
+          }
+        }
+      }
+
+      const allColls = [...firestoreColls, ...pendingLocal];
+      setLocalData(userId, 'collections', allColls);
+      return allColls;
+    } else if (localColls.length > 0) {
+      for (const coll of localColls) {
+        try {
+          const docRef = doc(db, 'users', userId, 'collections', coll.id);
+          await setDoc(docRef, sanitizeForFirestore(coll), { merge: true });
+        } catch (e) {
+          console.warn('Recovery collection save to firestore error:', e);
+        }
+      }
+      return localColls;
+    }
+
+    return [];
   } catch (error) {
     console.warn('Firestore collections fetch failed:', error);
-    return getLocalData<InfinityCollection>(userId, 'collections');
+    return localColls;
   }
 }
 
 export async function saveCollection(userId: string, coll: InfinityCollection): Promise<void> {
-  const toSave = { ...coll, userId, updatedAt: Date.now() };
+  const cleanColl = sanitizeForFirestore<InfinityCollection>({
+    ...coll,
+    userId,
+    updatedAt: Date.now()
+  });
 
-  if (!isFirestoreActive) {
-    const list = getLocalData<InfinityCollection>(userId, 'collections');
-    const idx = list.findIndex(c => c.id === coll.id);
-    if (idx >= 0) list[idx] = toSave;
-    else list.push(toSave);
-    setLocalData(userId, 'collections', list);
-    return;
-  }
+  const list = getLocalData<InfinityCollection>(userId, 'collections');
+  const idx = list.findIndex(c => c.id === cleanColl.id);
+  if (idx >= 0) list[idx] = cleanColl;
+  else list.push(cleanColl);
+  setLocalData(userId, 'collections', list);
 
-  try {
-    const docRef = doc(db, 'users', userId, 'collections', coll.id);
-    await setDoc(docRef, toSave, { merge: true });
-  } catch {
-    const list = getLocalData<InfinityCollection>(userId, 'collections');
-    const idx = list.findIndex(c => c.id === coll.id);
-    if (idx >= 0) list[idx] = toSave;
-    else list.push(toSave);
-    setLocalData(userId, 'collections', list);
+  if (isFirestoreActive) {
+    try {
+      const docRef = doc(db, 'users', userId, 'collections', cleanColl.id);
+      await setDoc(docRef, cleanColl, { merge: true });
+    } catch (e) {
+      console.warn('Firestore collection write error:', e);
+    }
   }
 }
 
@@ -200,32 +290,28 @@ export async function saveCollection(userId: string, coll: InfinityCollection): 
  * so that no user files are ever deleted or lost accidentally!
  */
 export async function deleteCollectionSafely(userId: string, collectionId: string): Promise<void> {
-  // 1. Move associated items to null collection
   const items = await fetchUserItems(userId);
   const affected = items.filter(i => i.collectionId === collectionId);
   for (const item of affected) {
     await updateItem(userId, item.id, { collectionId: null });
   }
 
-  // 2. Delete collection document
-  if (!isFirestoreActive) {
-    const list = getLocalData<InfinityCollection>(userId, 'collections');
-    setLocalData(userId, 'collections', list.filter(c => c.id !== collectionId));
-    return;
-  }
+  const list = getLocalData<InfinityCollection>(userId, 'collections');
+  setLocalData(userId, 'collections', list.filter(c => c.id !== collectionId));
 
-  try {
-    const docRef = doc(db, 'users', userId, 'collections', collectionId);
-    await deleteDoc(docRef);
-  } catch {
-    const list = getLocalData<InfinityCollection>(userId, 'collections');
-    setLocalData(userId, 'collections', list.filter(c => c.id !== collectionId));
+  if (isFirestoreActive) {
+    try {
+      const docRef = doc(db, 'users', userId, 'collections', collectionId);
+      await deleteDoc(docRef);
+    } catch (e) {
+      console.warn('Firestore collection delete error:', e);
+    }
   }
 }
 
 // User Settings (TOTP, Notion token, etc.)
 export async function getUserSettings(userId: string): Promise<Record<string, any>> {
-  if (!isFirestoreActive) {
+  const localSettings = (() => {
     if (typeof localStorage === 'undefined') return {};
     try {
       const data = localStorage.getItem(`infinity_${userId}_settings`);
@@ -233,34 +319,47 @@ export async function getUserSettings(userId: string): Promise<Record<string, an
     } catch {
       return {};
     }
+  })();
+
+  if (!isFirestoreActive) {
+    return localSettings;
   }
 
   try {
     const docRef = doc(db, 'users', userId, 'settings', 'config');
     const snap = await getDoc(docRef);
-    return snap.exists() ? snap.data() : {};
+    if (snap.exists()) {
+      const data = snap.data();
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(`infinity_${userId}_settings`, JSON.stringify(data));
+      }
+      return data;
+    }
+    return localSettings;
   } catch {
-    return {};
+    return localSettings;
   }
 }
 
 export async function saveUserSettings(userId: string, settings: Record<string, any>): Promise<void> {
-  if (!isFirestoreActive) {
-    if (typeof localStorage === 'undefined') return;
+  const cleanSettings = sanitizeForFirestore(settings);
+
+  if (typeof localStorage !== 'undefined') {
     try {
       const current = await getUserSettings(userId);
-      localStorage.setItem(`infinity_${userId}_settings`, JSON.stringify({ ...current, ...settings }));
+      localStorage.setItem(`infinity_${userId}_settings`, JSON.stringify({ ...current, ...cleanSettings }));
     } catch (err) {
       console.error(err);
     }
-    return;
   }
 
-  try {
-    const docRef = doc(db, 'users', userId, 'settings', 'config');
-    await setDoc(docRef, settings, { merge: true });
-  } catch (err) {
-    console.error('Error saving settings:', err);
+  if (isFirestoreActive) {
+    try {
+      const docRef = doc(db, 'users', userId, 'settings', 'config');
+      await setDoc(docRef, cleanSettings, { merge: true });
+    } catch (err) {
+      console.error('Error saving settings to firestore:', err);
+    }
   }
 }
 
@@ -288,7 +387,6 @@ export async function importUserData(
     const validated = ExportDataSchema.parse(parsed);
 
     if (mode === 'replace') {
-      // Clear current
       const currentItems = await fetchUserItems(userId);
       for (const i of currentItems) {
         await permanentlyDeleteItem(userId, i.id);
@@ -299,12 +397,10 @@ export async function importUserData(
       }
     }
 
-    // Save collections
     for (const coll of validated.collections) {
       await saveCollection(userId, { ...coll, userId });
     }
 
-    // Save items
     for (const item of validated.items) {
       await saveItem(userId, { ...item, userId });
     }
