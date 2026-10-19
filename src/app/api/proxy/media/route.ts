@@ -2,18 +2,36 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isSafeNotionMediaUrl } from '@/lib/security/ssrf';
 import { requireServerAuth } from '@/lib/auth/session';
 
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'Range, Content-Type, Authorization',
+    }
+  });
+}
+
+export async function HEAD(req: NextRequest) {
+  return GET(req);
+}
+
 export async function GET(req: NextRequest) {
   try {
-    const authCheck = requireServerAuth(req);
-    if (!authCheck.authorized) {
-      return authCheck.response;
-    }
-
     const { searchParams } = new URL(req.url);
     const targetUrl = searchParams.get('url');
 
     if (!targetUrl) {
       return NextResponse.json({ error: 'Parámetro url es requerido' }, { status: 400 });
+    }
+
+    const isSafeNotion = isSafeNotionMediaUrl(targetUrl);
+    if (!isSafeNotion) {
+      const authCheck = requireServerAuth(req);
+      if (!authCheck.authorized) {
+        return authCheck.response;
+      }
     }
 
     // SSRF verification on incoming URL
@@ -83,12 +101,19 @@ export async function GET(req: NextRequest) {
     if (contentLength) resHeaders.set('Content-Length', contentLength);
     if (contentRange) resHeaders.set('Content-Range', contentRange);
     resHeaders.set('Cache-Control', 'public, max-age=3600');
+    resHeaders.set('Access-Control-Allow-Origin', '*');
+    resHeaders.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    resHeaders.set('Access-Control-Allow-Headers', 'Range, Content-Type, Authorization');
+    resHeaders.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
 
     return new NextResponse(response.body, {
       status: response.status,
       headers: resHeaders
     });
   } catch (error: any) {
+    if (error?.digest === 'NEXT_PRERENDER_INTERRUPTED') {
+      throw error;
+    }
     console.error('Media proxy error:', error);
     return NextResponse.json({ error: 'Error al obtener el recurso remoto' }, { status: 500 });
   }

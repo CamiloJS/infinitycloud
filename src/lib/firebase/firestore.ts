@@ -140,6 +140,24 @@ export async function saveItem(userId: string, item: InfinityItem): Promise<void
       console.warn('Firestore write failed, kept in local store:', error);
     }
   }
+
+  // 3. Keep shared folder in sync if item belongs to a shared collection
+  if (cleanItem.collectionId) {
+    await syncCollectionIfShared(userId, cleanItem.collectionId);
+  }
+}
+
+export async function syncCollectionIfShared(userId: string, collectionId: string | null | undefined): Promise<void> {
+  if (!collectionId) return;
+  try {
+    const colls = await fetchUserCollections(userId);
+    const targetColl = colls.find(c => c.id === collectionId);
+    if (targetColl?.isShared) {
+      await syncSharedFolder(userId, targetColl);
+    }
+  } catch (e) {
+    console.warn('Error auto-syncing shared collection:', e);
+  }
 }
 
 export async function updateItem(
@@ -155,7 +173,9 @@ export async function updateItem(
   // 1. Update local storage
   const items = getLocalData<InfinityItem>(userId, 'items');
   const idx = items.findIndex(i => i.id === itemId);
+  let oldCollectionId: string | null | undefined = undefined;
   if (idx >= 0) {
+    oldCollectionId = items[idx].collectionId;
     items[idx] = { ...items[idx], ...cleanUpdates };
     setLocalData(userId, 'items', items);
   }
@@ -169,26 +189,45 @@ export async function updateItem(
       console.warn('Firestore update failed, kept in local store:', error);
     }
   }
+
+  // 3. Keep shared folder in sync if collection was affected
+  if (cleanUpdates.collectionId !== undefined && cleanUpdates.collectionId !== oldCollectionId) {
+    await syncCollectionIfShared(userId, oldCollectionId);
+    await syncCollectionIfShared(userId, cleanUpdates.collectionId);
+  } else if (oldCollectionId) {
+    await syncCollectionIfShared(userId, oldCollectionId);
+  }
 }
 
 export async function moveItemToTrash(userId: string, itemId: string): Promise<void> {
+  const items = getLocalData<InfinityItem>(userId, 'items');
+  const target = items.find(i => i.id === itemId);
   await updateItem(userId, itemId, {
     isTrash: true,
     trashedAt: Date.now(),
     isFavorite: false
   });
+  if (target?.collectionId) {
+    await syncCollectionIfShared(userId, target.collectionId);
+  }
 }
 
 export async function restoreItemFromTrash(userId: string, itemId: string): Promise<void> {
+  const items = getLocalData<InfinityItem>(userId, 'items');
+  const target = items.find(i => i.id === itemId);
   await updateItem(userId, itemId, {
     isTrash: false,
     trashedAt: null
   });
+  if (target?.collectionId) {
+    await syncCollectionIfShared(userId, target.collectionId);
+  }
 }
 
 export async function permanentlyDeleteItem(userId: string, itemId: string): Promise<void> {
   // 1. Remove from local store
   const items = getLocalData<InfinityItem>(userId, 'items');
+  const target = items.find(i => i.id === itemId);
   setLocalData(userId, 'items', items.filter(i => i.id !== itemId));
 
   // 2. Remove from Firestore
@@ -199,6 +238,11 @@ export async function permanentlyDeleteItem(userId: string, itemId: string): Pro
     } catch (error) {
       console.warn('Firestore delete failed:', error);
     }
+  }
+
+  // 3. Keep shared folder in sync
+  if (target?.collectionId) {
+    await syncCollectionIfShared(userId, target.collectionId);
   }
 }
 
@@ -462,8 +506,8 @@ export async function syncSharedFolder(userId: string, coll: InfinityCollection)
     .filter(i => !i.isTrash && i.collectionId === coll.id)
     .map(i => ({
       ...i,
-      // Don't leak raw internal password hash in public item representation
-      passwordHash: i.passwordHash ? 'PROTECTED' : undefined
+      // Retain passwordHash for client verification in PasswordUnlockModal
+      passwordHash: i.passwordHash || undefined
     }));
 
   const publicData: PublicSharedFolder = {

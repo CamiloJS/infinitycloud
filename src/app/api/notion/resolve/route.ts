@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Client } from '@notionhq/client';
 import { decryptSecret } from '@/lib/crypto/encryption';
 import { getSessionFromRequest } from '@/lib/auth/session';
-import { getServerUserSettings, fetchServerItems, updateServerItem } from '@/lib/server/store';
+import { getServerUserSettings, fetchServerItems, updateServerItem, findServerItemById } from '@/lib/server/store';
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
     const itemId = searchParams.get('itemId');
     const directBlockId = searchParams.get('blockId');
     const directUrl = searchParams.get('url');
+    const directPageId = searchParams.get('pageId');
 
     if (!itemId && !directBlockId && !directUrl) {
       return NextResponse.json({ error: 'Parámetro itemId, blockId o url es requerido' }, { status: 400 });
@@ -24,9 +25,13 @@ export async function GET(req: NextRequest) {
       item = items.find(i => i.id === itemId);
     }
 
+    if (!item && itemId) {
+      item = await findServerItemById(itemId);
+    }
+
     let targetUrl = item?.url || directUrl || '';
     const blockId = item?.metadata?.notionBlockId || directBlockId;
-    const pageId = item?.metadata?.notionPageId;
+    const pageId = item?.metadata?.notionPageId || directPageId;
 
     let freshUrl = targetUrl;
     let freshExpiry: string | undefined = undefined;
@@ -110,8 +115,21 @@ export async function GET(req: NextRequest) {
     }
 
     // 4. Redirect to the freshly signed URL
-    return NextResponse.redirect(freshUrl || targetUrl, { status: 307 });
+    const finalUrl = freshUrl || targetUrl;
+    if (!finalUrl) {
+      return NextResponse.json({ error: 'No se pudo resolver la URL del recurso de Notion' }, { status: 404 });
+    }
+
+    try {
+      new URL(finalUrl);
+      return NextResponse.redirect(finalUrl, { status: 307 });
+    } catch {
+      return NextResponse.json({ error: 'URL resuelta no válida' }, { status: 400 });
+    }
   } catch (error: any) {
+    if (error?.digest === 'NEXT_PRERENDER_INTERRUPTED') {
+      throw error;
+    }
     console.error('Error resolving Notion signed URL:', error);
     return NextResponse.json({ error: error.message || 'Error al resolver URL de Notion' }, { status: 500 });
   }

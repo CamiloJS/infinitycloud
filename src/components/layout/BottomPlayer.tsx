@@ -145,7 +145,7 @@ export function BottomPlayer() {
 
         <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between gap-4">
           {/* Left: Track Info */}
-          <div className="flex items-center gap-3 min-w-0 max-w-[220px] md:max-w-xs">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 max-w-[130px] sm:max-w-[220px] md:max-w-xs">
             <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-500/20 to-blue-500/20 border border-violet-500/30 flex items-center justify-center shrink-0 overflow-hidden">
               {currentTrack.thumbnailUrl ? (
                 /* eslint-disable-next-line @next/next/no-img-element */

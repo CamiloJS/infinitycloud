@@ -14,15 +14,22 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('system');
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('dark');
-
-  useEffect(() => {
-    const saved = localStorage.getItem('infinity_theme') as Theme | null;
-    if (saved && ['system', 'light', 'dark'].includes(saved)) {
-      setThemeState(saved);
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('infinity_theme') as Theme | null;
+      if (saved && ['system', 'light', 'dark'].includes(saved)) {
+        return saved;
+      }
     }
-  }, []);
+    return 'system';
+  });
+
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    }
+    return 'dark';
+  });
 
   useEffect(() => {
     const root = document.documentElement;

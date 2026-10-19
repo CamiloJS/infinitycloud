@@ -35,8 +35,23 @@ export function ItemCard({ item, onOpen, onEdit, onMove }: ItemCardProps) {
   const { toggleFavorite, moveToTrash, restoreFromTrash, deletePermanently, collections } = useItems();
   const { playTrack, currentTrack, isPlaying } = usePlayer();
   const [showMenu, setShowMenu] = useState<boolean>(false);
+  const [thumbSrc, setThumbSrc] = useState<string | undefined>(item.thumbnailUrl);
   const [imgError, setImgError] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    setThumbSrc(item.thumbnailUrl);
+    setImgError(false);
+  }, [item.thumbnailUrl]);
+
+  const handleImageError = () => {
+    if (thumbSrc && thumbSrc.includes('maxresdefault.jpg')) {
+      // YouTube videos that lack 1080p maxresdefault fallback to mqdefault (16:9, guaranteed)
+      setThumbSrc(thumbSrc.replace('maxresdefault.jpg', 'mqdefault.jpg'));
+    } else {
+      setImgError(true);
+    }
+  };
 
   const isCurrentPlayingAudio = currentTrack?.id === item.id && isPlaying;
   const coll = collections.find(c => c.id === item.collectionId);
@@ -77,12 +92,12 @@ export function ItemCard({ item, onOpen, onEdit, onMove }: ItemCardProps) {
     >
       {/* Thumbnail / Preview Area */}
       <div className="relative w-full aspect-video bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden">
-        {item.thumbnailUrl && !imgError ? (
+        {thumbSrc && !imgError ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
-            src={item.thumbnailUrl}
+            src={thumbSrc}
             alt={item.name}
-            onError={() => setImgError(true)}
+            onError={handleImageError}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             loading="lazy"
           />

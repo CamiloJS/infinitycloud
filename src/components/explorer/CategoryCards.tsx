@@ -6,7 +6,7 @@ import { CategoryType } from '@/types';
 import { Image, Video, Music, FileText, Archive, Layers } from 'lucide-react';
 
 export function CategoryCards() {
-  const { items, activeCategory, setActiveCategory, activeView } = useItems();
+  const { items, activeCategory, setActiveCategory, activeView, activeCollectionId } = useItems();
 
   if (activeView !== 'library') return null;
 
@@ -64,9 +64,13 @@ export function CategoryCards() {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6 select-none">
       {categories.map(cat => {
+        const baseItems = activeCollectionId
+          ? items.filter(i => !i.isTrash && i.collectionId === activeCollectionId)
+          : items.filter(i => !i.isTrash);
+
         const count = cat.id === 'all'
-          ? items.filter(i => !i.isTrash).length
-          : items.filter(i => !i.isTrash && i.category === cat.id).length;
+          ? baseItems.length
+          : baseItems.filter(i => i.category === cat.id).length;
 
         const isSelected = activeCategory === cat.id;
 

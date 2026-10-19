@@ -35,7 +35,18 @@ export function ItemRow({ item, onOpen, onEdit, onMove }: ItemRowProps) {
   const { toggleFavorite, moveToTrash, restoreFromTrash, deletePermanently, collections } = useItems();
   const { playTrack, currentTrack, isPlaying } = usePlayer();
   const [showMenu, setShowMenu] = useState<boolean>(false);
+  const [thumbSrc, setThumbSrc] = useState<string | undefined>(item.thumbnailUrl);
   const [copied, setCopied] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    setThumbSrc(item.thumbnailUrl);
+  }, [item.thumbnailUrl]);
+
+  const handleImageError = () => {
+    if (thumbSrc && thumbSrc.includes('maxresdefault.jpg')) {
+      setThumbSrc(thumbSrc.replace('maxresdefault.jpg', 'mqdefault.jpg'));
+    }
+  };
 
   const isCurrentPlaying = currentTrack?.id === item.id && isPlaying;
   const coll = collections.find(c => c.id === item.collectionId);
@@ -70,9 +81,9 @@ export function ItemRow({ item, onOpen, onEdit, onMove }: ItemRowProps) {
       {/* Left: Thumbnail & Title */}
       <div className="flex items-center gap-3 min-w-0 flex-1 pr-4">
         <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-950 flex items-center justify-center shrink-0 overflow-hidden relative">
-          {item.thumbnailUrl ? (
+          {thumbSrc ? (
             /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={item.thumbnailUrl} alt={item.name} className="w-full h-full object-cover" />
+            <img src={thumbSrc} alt={item.name} onError={handleImageError} className="w-full h-full object-cover" />
           ) : (
             getCategoryIcon()
           )}

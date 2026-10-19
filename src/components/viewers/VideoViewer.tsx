@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { InfinityItem } from '@/types';
 import { adapterRegistry } from '@/lib/adapters/registry';
 import { useItems } from '@/context/ItemsContext';
+import { drawCoverCrop } from '@/lib/utils/videoThumbnail';
 import { 
   X, 
   ExternalLink, 
@@ -35,6 +36,7 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
   const [isLooping, setIsLooping] = useState<boolean>(false);
   const [isCoverFit, setIsCoverFit] = useState<boolean>(false);
   const [snapshotSuccess, setSnapshotSuccess] = useState<boolean>(false);
+  const [corsRetryState, setCorsRetryState] = useState<'initial' | 'proxy' | 'nocors'>('initial');
 
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -42,19 +44,33 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
   const gainNodeRef = useRef<GainNode | null>(null);
 
   useEffect(() => {
+    return () => {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {});
+        audioCtxRef.current = null;
+        gainNodeRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     setEmbedFailed(false);
     setVolumeBoost(1.0);
     setPlaybackSpeed(1.0);
     setIsLooping(false);
     setIsCoverFit(false);
+    setCorsRetryState('initial');
+
+    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+      gainNodeRef.current = null;
+    }
   }, [item?.id]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      const inFullscreen = Boolean(document.fullscreenElement);
-      if (inFullscreen) {
-        setIsMaximized(true);
-      }
+      setIsMaximized(Boolean(document.fullscreenElement));
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -103,6 +119,13 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
   const applyVolumeBoost = (boostMultiplier: number) => {
     setVolumeBoost(boostMultiplier);
     if (!videoRef.current) return;
+
+    if (corsRetryState === 'nocors') {
+      // Cross-origin element without CORS grant; Web Audio would mute audio by browser policy.
+      // Gracefully maintain max native volume without cutting sound.
+      videoRef.current.volume = 1.0;
+      return;
+    }
 
     try {
       if (!audioCtxRef.current) {
@@ -166,7 +189,7 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
       canvas.height = 360;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        drawCoverCrop(ctx, videoRef.current, canvas.width, canvas.height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
         await editItem(item.id, { thumbnailUrl: dataUrl });
         setSnapshotSuccess(true);
@@ -195,6 +218,28 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
     isVideoExt
   );
 
+  const notionDirectUrl = item.provider === 'notion'
+    ? `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}&url=${encodeURIComponent(item.url)}${item.metadata?.notionBlockId ? `&blockId=${encodeURIComponent(item.metadata.notionBlockId)}` : ''}${item.metadata?.notionPageId ? `&pageId=${encodeURIComponent(item.metadata.notionPageId)}` : ''}`
+    : directUrl;
+
+  const baseSrc = item.provider === 'notion' ? notionDirectUrl : directUrl;
+
+  const effectiveVideoSrc = corsRetryState === 'proxy'
+    ? `/api/proxy/media?url=${encodeURIComponent(item.url || directUrl)}`
+    : (corsRetryState === 'nocors' ? (item.url || directUrl) : baseSrc);
+
+  const handleVideoError = () => {
+    if (corsRetryState === 'initial') {
+      // First retry: attempt proxied stream to acquire CORS headers
+      setCorsRetryState('proxy');
+    } else if (corsRetryState === 'proxy') {
+      // Second retry: fallback to direct play without CORS
+      setCorsRetryState('nocors');
+    } else {
+      setEmbedFailed(true);
+    }
+  };
+
   return (
     <div 
       ref={containerRef}
@@ -209,43 +254,31 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
             : 'w-full max-w-5xl rounded-3xl border border-slate-800'
         }`}
       >
-        {/* Header Bar STRICTLY ABOVE the Video Frame */}
-        <div className="w-full flex items-center justify-between px-5 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-400 uppercase tracking-wider">
-              VIDEO
-            </span>
-            <span className="text-xs sm:text-sm font-semibold text-slate-200 truncate max-w-xs sm:max-w-lg">
-              {item.name}
-            </span>
-          </div>
+        {/* Minimalist Top Icons - ZERO text, strictly above video frame */}
+        <div className="w-full flex items-center justify-end px-3 py-1.5 bg-slate-950 shrink-0 gap-2">
+          <button
+            onClick={toggleMaximize}
+            className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center"
+            title={isMaximized ? 'Restaurar' : 'Maximizar'}
+            aria-label={isMaximized ? 'Restaurar' : 'Maximizar'}
+          >
+            {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              onClick={toggleMaximize}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all active:scale-95 flex items-center gap-1.5 text-xs"
-              title={isMaximized ? 'Restaurar tamaño (Esc)' : 'Maximizar pantalla completa'}
-            >
-              {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-              <span className="hidden sm:inline text-[11px] font-medium">
-                {isMaximized ? 'Restaurar' : 'Maximizar'}
-              </span>
-            </button>
-
-            <button
-              onClick={onClose}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition-all active:scale-95"
-              title="Cerrar (Esc)"
-            >
-              <X size={18} />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl bg-slate-900/90 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center"
+            title="Cerrar"
+            aria-label="Cerrar"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         {/* Video Player Display */}
         <div 
           className={`relative w-full bg-black flex items-center justify-center ${
-            isMaximized ? 'w-full h-full flex-1' : 'aspect-video'
+            isMaximized ? 'w-full h-full flex-1 min-h-0' : 'aspect-video'
           }`}
         >
           {embedFailed ? (
@@ -276,19 +309,14 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
             />
           ) : isDirectVideo ? (
             <video
+              key={`${item.id}_${corsRetryState}`}
               ref={videoRef}
-              src={directUrl}
+              src={effectiveVideoSrc}
               controls
               autoPlay
               playsInline
-              crossOrigin="anonymous"
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (target.getAttribute('crossOrigin')) {
-                  target.removeAttribute('crossOrigin');
-                  target.load();
-                }
-              }}
+              crossOrigin={corsRetryState === 'nocors' ? undefined : 'anonymous'}
+              onError={handleVideoError}
               className={`w-full h-full ${isCoverFit ? 'object-cover' : 'object-contain'}`}
             />
           ) : (

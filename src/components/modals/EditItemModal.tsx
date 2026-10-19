@@ -103,7 +103,7 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
       } else {
         // Disabled password
         updates.isProtected = false;
-        updates.passwordHash = undefined;
+        updates.passwordHash = null as any;
       }
 
       await editItem(item.id, updates);

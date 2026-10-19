@@ -86,6 +86,30 @@ export async function fetchServerItems(userId: string): Promise<InfinityItem[]> 
 }
 
 /**
+ * Finds an item by ID across all server stores or public shares
+ */
+export async function findServerItemById(itemId: string): Promise<InfinityItem | null> {
+  const store = loadLocalStore();
+  for (const userItems of Object.values(store.items)) {
+    const found = userItems.find(i => i.id === itemId);
+    if (found) return found;
+  }
+
+  if (isFirebaseAdminConfigured && adminDb) {
+    try {
+      const snap = await adminDb.collectionGroup('items').where('id', '==', itemId).limit(1).get();
+      if (!snap.empty) {
+        return snap.docs[0].data() as InfinityItem;
+      }
+    } catch (err) {
+      console.warn('Firebase Admin findServerItemById error:', err);
+    }
+  }
+
+  return null;
+}
+
+/**
  * Saves or updates an item in user storage
  */
 export async function saveServerItem(userId: string, item: InfinityItem): Promise<void> {
