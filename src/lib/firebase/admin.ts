@@ -8,15 +8,17 @@ export const isFirebaseAdminConfigured = Boolean(
   process.env.FIREBASE_PRIVATE_KEY
 );
 
-function initAdmin(): App {
+let adminApp: App | null = null;
+let adminAuth: Auth | null = null;
+let adminDb: Firestore | null = null;
+
+try {
   const currentApps = getApps();
   if (currentApps.length > 0) {
-    return currentApps[0]!;
-  }
-
-  if (isFirebaseAdminConfigured) {
+    adminApp = currentApps[0]!;
+  } else if (isFirebaseAdminConfigured) {
     const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
-    return initializeApp({
+    adminApp = initializeApp({
       credential: cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
@@ -25,12 +27,12 @@ function initAdmin(): App {
     });
   }
 
-  // Fallback for build or demo mode
-  return initializeApp({
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'infinity-demo',
-  });
+  if (adminApp) {
+    adminAuth = getAuth(adminApp);
+    adminDb = getFirestore(adminApp);
+  }
+} catch (e) {
+  console.warn('Firebase Admin safe initialization deferred/warning:', e);
 }
 
-export const adminApp = initAdmin();
-export const adminAuth: Auth | null = getApps().length ? getAuth(adminApp) : null;
-export const adminDb: Firestore | null = getApps().length ? getFirestore(adminApp) : null;
+export { adminApp, adminAuth, adminDb };
