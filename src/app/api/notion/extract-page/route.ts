@@ -1,8 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Client } from '@notionhq/client';
-import { decryptSecret } from '@/lib/crypto/encryption';
-import { getSessionFromRequest } from '@/lib/auth/session';
-import { getServerUserSettings } from '@/lib/server/store';
 
 export const maxDuration = 30;
 
@@ -154,15 +150,21 @@ export async function POST(req: NextRequest) {
     let coverUrl: string | undefined = undefined;
 
     // Check if logged in user has private Notion integration token
-    const session = getSessionFromRequest(req);
-    let notionClient: Client | null = null;
-
-    if (session?.userId) {
+    let notionClient: any = null;
+    const cookieHeader = req.headers.get('cookie') || '';
+    if (cookieHeader.includes('infinity_session')) {
       try {
-        const settings = await getServerUserSettings(session.userId);
-        if (settings.notionTokenEncrypted) {
-          const token = decryptSecret(settings.notionTokenEncrypted);
-          notionClient = new Client({ auth: token });
+        const { getSessionFromRequest } = await import('@/lib/auth/session');
+        const session = getSessionFromRequest(req);
+        if (session?.userId) {
+          const { getServerUserSettings } = await import('@/lib/server/store');
+          const settings = await getServerUserSettings(session.userId);
+          if (settings.notionTokenEncrypted) {
+            const { decryptSecret } = await import('@/lib/crypto/encryption');
+            const token = decryptSecret(settings.notionTokenEncrypted);
+            const { Client } = await import('@notionhq/client');
+            notionClient = new Client({ auth: token });
+          }
         }
       } catch (err) {
         console.warn('Error obtaining server settings for Notion client:', err);
