@@ -422,10 +422,16 @@ export async function POST(req: NextRequest) {
           // If no video in root blocks, check collection views inside recordMap
           if (chunkData?.recordMap?.collection_view) {
             let checkedCollections = 0;
+            const defaultSpaceId = chunkData?.recordMap?.block?.[formattedId]?.value?.spaceId || 
+                                   chunkData?.recordMap?.block?.[formattedId]?.value?.value?.spaceId ||
+                                   (Object.values(chunkData?.recordMap?.block || {})[0] as any)?.value?.spaceId ||
+                                   (Object.values(chunkData?.recordMap?.block || {})[0] as any)?.value?.value?.spaceId;
+
             for (const [cvId, cv] of Object.entries(chunkData.recordMap.collection_view) as [string, any][]) {
               if (checkedCollections >= 2) break;
               const cvVal = cv?.value?.value || cv?.value;
               const cId = cvVal?.format?.collection_pointer?.id || Object.keys(chunkData?.recordMap?.collection || {})[0];
+              const spaceId = cvVal?.format?.collection_pointer?.spaceId || defaultSpaceId;
               if (!cId) continue;
 
               checkedCollections++;
@@ -438,14 +444,14 @@ export async function POST(req: NextRequest) {
                   },
                   signal: AbortSignal.timeout(3000),
                   body: JSON.stringify({
-                    collection: { id: cId },
-                    collectionView: { id: cvId },
+                    collection: { id: cId, ...(spaceId ? { spaceId } : {}) },
+                    collectionView: { id: cvId, ...(spaceId ? { spaceId } : {}) },
                     loader: {
                       type: 'reducer',
                       reducers: { collection_group_results: { type: 'results', limit: 25 } },
                       sort: [],
                       searchQuery: '',
-                      userTimeZone: 'America/Bogota'
+                      userTimeZone: 'UTC'
                     }
                   })
                 });
@@ -457,31 +463,88 @@ export async function POST(req: NextRequest) {
                     const qVal = qBVal?.value?.value || qBVal?.value;
                     if (!qVal) continue;
 
+                    let qSource: string | null = null;
                     const isQVideo = qVal.type === 'video' ||
                       (qVal.type === 'file' && qVal.properties?.source?.[0]?.[0]?.match(/\.(mp4|mov|webm|m4v)/i)) ||
                       ((qVal.type === 'embed' || qVal.type === 'bookmark') && isVideoUrl(qVal.properties?.source?.[0]?.[0] || ''));
 
                     if (isQVideo) {
-                      const rawSource = qVal.properties?.source?.[0]?.[0] || qVal.format?.display_source;
-                      const caption = qVal.properties?.title?.[0]?.[0] || pageTitle;
-                      if (rawSource) {
-                        return NextResponse.json({
-                          success: true,
-                          foundVideo: true,
-                          video: {
-                            url: rawSource,
-                            title: caption,
-                            caption,
-                            coverUrl: coverUrl || undefined,
-                            notionBlockId: qId,
-                            notionPageId: formattedId,
-                            isExpiringS3: rawSource.includes('amazonaws.com') || rawSource.includes('notion.so'),
-                            sourceType: 'notion_block',
-                            pageTitle,
-                            pageDescription
+                      qSource = qVal.properties?.source?.[0]?.[0] || qVal.format?.display_source;
+                    }
+
+                    // Also inspect all properties for video links
+                    if (!qSource && qVal.properties) {
+                      for (const pVal of Object.values(qVal.properties) as any[]) {
+                        if (Array.isArray(pVal)) {
+                          for (const seg of pVal) {
+                            if (Array.isArray(seg)) {
+                              if (typeof seg[0] === 'string' && isVideoUrl(seg[0])) {
+                                qSource = seg[0];
+                                break;
+                              }
+                              if (Array.isArray(seg[1])) {
+                                for (const sub of seg[1]) {
+                                  if (Array.isArray(sub) && sub[0] === 'a' && typeof sub[1] === 'string' && isVideoUrl(sub[1])) {
+                                    qSource = sub[1];
+                                    break;
+                                  }
+                                }
+                              }
+                            }
                           }
-                        });
+                        }
+                        if (qSource) break;
                       }
+                    }
+
+                    if (qSource) {
+                      const caption = qVal.properties?.title?.[0]?.[0] || pageTitle;
+                      let finalVideoUrl = qSource;
+                      const isS3 = Boolean(qSource && (qSource.includes('amazonaws.com') || qSource.includes('notion.so')));
+
+                      if (isS3) {
+                        try {
+                          const signRes = await fetch('https://www.notion.so/api/v3/getSignedFileUrls', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                            },
+                            signal: AbortSignal.timeout(2000),
+                            body: JSON.stringify({
+                              urls: [{
+                                url: qSource,
+                                permissionRecord: { table: 'block', id: qId }
+                              }]
+                            })
+                          });
+                          if (signRes.ok) {
+                            const signData = await signRes.json();
+                            if (signData?.signedUrls?.[0]) {
+                              finalVideoUrl = signData.signedUrls[0];
+                            }
+                          }
+                        } catch {
+                          // keep original url
+                        }
+                      }
+
+                      return NextResponse.json({
+                        success: true,
+                        foundVideo: true,
+                        video: {
+                          url: finalVideoUrl,
+                          title: caption,
+                          caption,
+                          coverUrl: coverUrl || undefined,
+                          notionBlockId: qId,
+                          notionPageId: formattedId,
+                          isExpiringS3: isS3,
+                          sourceType: isS3 ? 'notion_block' : 'embed',
+                          pageTitle,
+                          pageDescription
+                        }
+                      });
                     }
                   }
                 }
