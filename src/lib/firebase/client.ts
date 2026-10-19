@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth, GoogleAuthProvider } from 'firebase/auth';
 import { initializeFirestore, getFirestore, Firestore } from 'firebase/firestore';
+import { safeStorage } from '@/lib/utils/storage';
 
 export interface FirebaseClientConfig {
   apiKey: string;
@@ -24,14 +25,12 @@ export const defaultFirebaseConfig: FirebaseClientConfig = {
 };
 
 export function getSavedFirebaseConfig(): FirebaseClientConfig {
-  if (typeof window !== 'undefined') {
-    const raw = localStorage.getItem('infinity_custom_firebase_config');
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed.apiKey && parsed.projectId) return parsed;
-      } catch (e) {}
-    }
+  const raw = safeStorage.getItem('infinity_custom_firebase_config');
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.apiKey && parsed.projectId) return parsed;
+    } catch (e) {}
   }
   return defaultFirebaseConfig;
 }
@@ -44,8 +43,8 @@ export function checkFirebaseConfigured(): boolean {
 }
 
 export function saveFirebaseConfig(config: FirebaseClientConfig) {
+  safeStorage.setItem('infinity_custom_firebase_config', JSON.stringify(config));
   if (typeof window !== 'undefined') {
-    localStorage.setItem('infinity_custom_firebase_config', JSON.stringify(config));
     window.location.reload();
   }
 }

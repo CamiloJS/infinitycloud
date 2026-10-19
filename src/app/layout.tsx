@@ -26,8 +26,13 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               try {
-                const theme = localStorage.getItem('infinity_theme');
-                const isDark = theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                let theme = null;
+                try {
+                  if (typeof window !== 'undefined' && window.localStorage) {
+                    theme = window.localStorage.getItem('infinity_theme');
+                  }
+                } catch (err) {}
+                const isDark = theme === 'dark' || (!theme && typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
                 if (isDark) {
                   document.documentElement.classList.add('dark');
                   document.documentElement.style.colorScheme = 'dark';

@@ -10,6 +10,7 @@ import {
 import { db, isFirebaseConfigured } from './client';
 import { InfinityItem, InfinityCollection, PublicSharedFolder } from '@/types';
 import { ExportData, ExportDataSchema } from '../validation/schemas';
+import { safeStorage } from '../utils/storage';
 
 const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
 const isFirestoreActive = isFirebaseConfigured && !isTestEnv;
@@ -44,9 +45,8 @@ function getLocalKey(userId: string, type: string) {
 }
 
 function getLocalData<T>(userId: string, type: string): T[] {
-  if (typeof localStorage === 'undefined') return [];
   try {
-    const data = localStorage.getItem(getLocalKey(userId, type));
+    const data = safeStorage.getItem(getLocalKey(userId, type));
     return data ? JSON.parse(data) : [];
   } catch {
     return [];
@@ -54,9 +54,8 @@ function getLocalData<T>(userId: string, type: string): T[] {
 }
 
 function setLocalData<T>(userId: string, type: string, data: T[]) {
-  if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem(getLocalKey(userId, type), JSON.stringify(data));
+    safeStorage.setItem(getLocalKey(userId, type), JSON.stringify(data));
   } catch (err) {
     console.error('Error saving local data:', err);
   }
@@ -368,9 +367,8 @@ export async function deleteCollectionSafely(userId: string, collectionId: strin
 // User Settings (TOTP, Notion token, etc.)
 export async function getUserSettings(userId: string): Promise<Record<string, any>> {
   const localSettings = (() => {
-    if (typeof localStorage === 'undefined') return {};
     try {
-      const data = localStorage.getItem(`infinity_${userId}_settings`);
+      const data = safeStorage.getItem(`infinity_${userId}_settings`);
       return data ? JSON.parse(data) : {};
     } catch {
       return {};
@@ -386,9 +384,7 @@ export async function getUserSettings(userId: string): Promise<Record<string, an
     const snap = await getDoc(docRef);
     if (snap.exists()) {
       const data = snap.data();
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(`infinity_${userId}_settings`, JSON.stringify(data));
-      }
+      safeStorage.setItem(`infinity_${userId}_settings`, JSON.stringify(data));
       return data;
     }
     return localSettings;
@@ -400,13 +396,11 @@ export async function getUserSettings(userId: string): Promise<Record<string, an
 export async function saveUserSettings(userId: string, settings: Record<string, any>): Promise<void> {
   const cleanSettings = sanitizeForFirestore(settings);
 
-  if (typeof localStorage !== 'undefined') {
-    try {
-      const current = await getUserSettings(userId);
-      localStorage.setItem(`infinity_${userId}_settings`, JSON.stringify({ ...current, ...cleanSettings }));
-    } catch (err) {
-      console.error(err);
-    }
+  try {
+    const current = await getUserSettings(userId);
+    safeStorage.setItem(`infinity_${userId}_settings`, JSON.stringify({ ...current, ...cleanSettings }));
+  } catch (err) {
+    console.error(err);
   }
 
   if (isFirestoreActive) {
@@ -486,9 +480,7 @@ export async function syncSharedFolder(userId: string, coll: InfinityCollection)
 
   if (!coll.isShared) {
     // Unshare: remove from local cache and firestore
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(publicShareKey);
-    }
+    safeStorage.removeItem(publicShareKey);
     if (isFirestoreActive) {
       try {
         const shareRef = doc(db, 'public_shares', coll.id);
@@ -532,17 +524,11 @@ export async function syncSharedFolder(userId: string, coll: InfinityCollection)
     securedItems: coll.sharePasswordHash ? collectionItems : undefined
   });
 
-  if (typeof localStorage !== 'undefined') {
-    try {
-      localStorage.setItem(publicShareKey, JSON.stringify({
-        ...publicData,
-        sharePasswordHash: coll.sharePasswordHash,
-        securedItems: coll.sharePasswordHash ? collectionItems : undefined
-      }));
-    } catch (e) {
-      console.warn('Error saving local public share:', e);
-    }
-  }
+  safeStorage.setItem(publicShareKey, JSON.stringify({
+    ...publicData,
+    sharePasswordHash: coll.sharePasswordHash,
+    securedItems: coll.sharePasswordHash ? collectionItems : undefined
+  }));
 
   if (isFirestoreActive) {
     try {
@@ -574,9 +560,9 @@ export async function fetchPublicFolder(
   }
 
   // 2. Fallback to localStorage
-  if (!shareDoc && typeof localStorage !== 'undefined') {
+  if (!shareDoc) {
     try {
-      const raw = localStorage.getItem(`infinity_public_share_${collectionId}`);
+      const raw = safeStorage.getItem(`infinity_public_share_${collectionId}`);
       if (raw) shareDoc = JSON.parse(raw);
     } catch (e) {}
   }

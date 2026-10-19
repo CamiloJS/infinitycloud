@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { safeStorage } from '@/lib/utils/storage';
 
 type Theme = 'system' | 'light' | 'dark';
 
@@ -15,11 +16,9 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('infinity_theme') as Theme | null;
-      if (saved && ['system', 'light', 'dark'].includes(saved)) {
-        return saved;
-      }
+    const saved = safeStorage.getItem('infinity_theme') as Theme | null;
+    if (saved && ['system', 'light', 'dark'].includes(saved)) {
+      return saved;
     }
     return 'system';
   });
@@ -68,7 +67,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
-    localStorage.setItem('infinity_theme', newTheme);
+    safeStorage.setItem('infinity_theme', newTheme);
   };
 
   const toggleTheme = () => {
