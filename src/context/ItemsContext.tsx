@@ -351,18 +351,18 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
       // Search query
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
-        const matchesName = item.name.toLowerCase().includes(query);
-        const matchesUrl = item.url.toLowerCase().includes(query);
-        const matchesProvider = item.provider.toLowerCase().includes(query);
+        const matchesName = (item.name || '').toLowerCase().includes(query);
+        const matchesUrl = (item.url || '').toLowerCase().includes(query);
+        const matchesProvider = (item.provider || '').toLowerCase().includes(query);
         if (!matchesName && !matchesUrl && !matchesProvider) return false;
       }
 
       return true;
     }).sort((a, b) => {
-      if (sortOption === 'date-desc') return b.createdAt - a.createdAt;
-      if (sortOption === 'date-asc') return a.createdAt - b.createdAt;
-      if (sortOption === 'name-asc') return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' });
-      if (sortOption === 'name-desc') return b.name.localeCompare(a.name, 'es', { sensitivity: 'base' });
+      if (sortOption === 'date-desc') return (b.createdAt || 0) - (a.createdAt || 0);
+      if (sortOption === 'date-asc') return (a.createdAt || 0) - (b.createdAt || 0);
+      if (sortOption === 'name-asc') return (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' });
+      if (sortOption === 'name-desc') return (b.name || '').localeCompare(a.name || '', 'es', { sensitivity: 'base' });
       return 0;
     });
   }, [items, activeView, activeCategory, activeCollectionId, selectedProvider, searchQuery, sortOption]);

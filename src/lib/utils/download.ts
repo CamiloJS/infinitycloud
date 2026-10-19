@@ -9,7 +9,7 @@ import { isValidDirectVideoStream } from '@/components/viewers/VideoViewer';
 export function canDownloadItem(item?: InfinityItem | null): boolean {
   if (!item || !item.url) return false;
 
-  const urlLower = item.url.toLowerCase();
+  const urlLower = String(item.url || '').toLowerCase();
   const provider = item.provider;
 
   // 1. YouTube videos are strictly non-downloadable

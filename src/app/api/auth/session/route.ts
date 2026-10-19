@@ -6,7 +6,7 @@ import {
   clearSessionCookie 
 } from '@/lib/auth/session';
 import { getServerUserSettings } from '@/lib/server/store';
-import { adminAuth, isFirebaseAdminConfigured } from '@/lib/firebase/admin';
+import { getAdminAuth, isFirebaseAdminConfigured } from '@/lib/firebase/admin';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,11 +19,17 @@ export async function POST(req: NextRequest) {
     let userId = '';
     let email = '';
 
-    if (idToken && isFirebaseAdminConfigured && adminAuth) {
+    if (idToken && isFirebaseAdminConfigured) {
       try {
-        const decoded = await adminAuth.verifyIdToken(idToken);
-        userId = decoded.uid;
-        email = decoded.email || '';
+        const auth = await getAdminAuth();
+        if (auth) {
+          const decoded = await auth.verifyIdToken(idToken);
+          userId = decoded.uid;
+          email = decoded.email || '';
+        } else {
+          userId = inputUid || 'user';
+          email = inputEmail || '';
+        }
       } catch {
         return NextResponse.json({ error: 'Token de autenticación de Firebase inválido' }, { status: 401 });
       }

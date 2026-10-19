@@ -38,7 +38,7 @@ interface VideoViewerProps {
 }
 
 export function isValidDirectVideoStream(url?: string | null): boolean {
-  if (!url) return false;
+  if (!url || typeof url !== 'string') return false;
   const l = url.trim().toLowerCase();
   
   // HTML web pages from Notion or any domain without a direct media format are NEVER direct video streams
@@ -430,7 +430,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   };
 
   const handleSelectOrLinkVideo = async (videoUrl: string, videoTitle?: string) => {
-    if (!videoUrl.trim() || !item) return;
+    if (!videoUrl || typeof videoUrl !== 'string' || !videoUrl.trim() || !item) return;
     setIsSavingVideoLink(true);
     try {
       const cleanVidUrl = videoUrl.trim();
@@ -507,7 +507,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
 
   const notionDirectUrl = (hasExtractedVideo ? extractedVideo?.url : null) || (hasS3Video ? item.metadata?.s3Url : null) || (
     item.provider === 'notion' && (item.metadata?.notionBlockId || item.metadata?.isNotionVideo)
-      ? `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}&url=${encodeURIComponent(item.metadata?.s3Url || item.url)}${item.metadata?.notionBlockId ? `&blockId=${encodeURIComponent(item.metadata.notionBlockId)}` : ''}${item.metadata?.notionPageId ? `&pageId=${encodeURIComponent(item.metadata.notionPageId)}` : ''}`
+      ? `/api/notion/resolve?itemId=${encodeURIComponent(item.id || '')}&url=${encodeURIComponent(item.metadata?.s3Url || item.url || '')}${item.metadata?.notionBlockId ? `&blockId=${encodeURIComponent(item.metadata.notionBlockId)}` : ''}${item.metadata?.notionPageId ? `&pageId=${encodeURIComponent(item.metadata.notionPageId)}` : ''}`
       : directUrl
   );
 
@@ -645,11 +645,11 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                     {notionVideos.map((vid, idx) => (
                       <button
                         key={idx}
-                        onClick={() => handleSelectOrLinkVideo(vid.url, vid.title)}
+                        onClick={() => handleSelectOrLinkVideo(vid?.url || '', vid?.title)}
                         disabled={isSavingVideoLink}
                         className="w-full text-left p-2.5 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/20 text-white text-xs flex items-center justify-between transition-colors"
                       >
-                        <span className="truncate pr-2 font-medium">{vid.title || `Video ${idx + 1}`}</span>
+                        <span className="truncate pr-2 font-medium">{vid?.title || `Video ${idx + 1}`}</span>
                         <span className="shrink-0 text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded">
                           Elegir
                         </span>
@@ -739,13 +739,13 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                     {notionVideos.map((vid, idx) => (
                       <button
                         key={idx}
-                        onClick={() => handleSelectOrLinkVideo(vid.url, vid.title)}
+                        onClick={() => handleSelectOrLinkVideo(vid?.url || '', vid?.title)}
                         disabled={isSavingVideoLink}
                         className="w-full text-left p-2.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-white text-xs flex items-center justify-between transition-all"
                       >
                         <div className="flex items-center gap-2 truncate pr-2">
                           <Play size={13} className="text-blue-400 fill-blue-400 shrink-0" />
-                          <span className="truncate font-medium">{vid.title || `Video ${idx + 1}`}</span>
+                          <span className="truncate font-medium">{vid?.title || `Video ${idx + 1}`}</span>
                         </div>
                         <span className="shrink-0 text-[10px] bg-blue-500 text-white font-bold px-2 py-0.5 rounded">
                           Reproducir
@@ -851,51 +851,58 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
               onError={() => setEmbedFailed(true)}
             />
           ) : isDirectVideo ? (
-            <video
-              ref={videoRef}
-              src={effectiveVideoSrc}
-              controls
-              autoPlay
-              playsInline
-              loop={isLooping}
-              crossOrigin={(volumeBoost > 1.0 || corsRetryState === 'proxy') ? 'anonymous' : undefined}
-              onError={handleVideoError}
-              onLoadedMetadata={() => {
-                if (videoRef.current) {
-                  videoRef.current.playbackRate = playbackSpeed;
-                  videoRef.current.defaultPlaybackRate = playbackSpeed;
-                  videoRef.current.loop = isLooping;
-                }
-              }}
-              onPlay={() => {
-                if (videoRef.current) {
-                  videoRef.current.playbackRate = playbackSpeed;
-                  if (volumeBoost > 1.0 && audioCtxRef.current && gainNodeRef.current) {
-                    try {
-                      gainNodeRef.current.gain.setValueAtTime(volumeBoost, audioCtxRef.current.currentTime);
-                    } catch {}
+            !effectiveVideoSrc ? (
+              <div className="flex flex-col items-center justify-center p-8 gap-3">
+                <div className="w-10 h-10 rounded-full border-2 border-blue-500/20 border-t-blue-500 animate-spin" />
+                <p className="text-slate-300 font-medium text-sm">Cargando video...</p>
+              </div>
+            ) : (
+              <video
+                ref={videoRef}
+                src={effectiveVideoSrc}
+                controls
+                autoPlay
+                playsInline
+                loop={isLooping}
+                crossOrigin={(volumeBoost > 1.0 || corsRetryState === 'proxy') ? 'anonymous' : undefined}
+                onError={handleVideoError}
+                onLoadedMetadata={() => {
+                  if (videoRef.current) {
+                    videoRef.current.playbackRate = playbackSpeed;
+                    videoRef.current.defaultPlaybackRate = playbackSpeed;
+                    videoRef.current.loop = isLooping;
                   }
-                }
-              }}
-              onRateChange={() => {
-                if (videoRef.current && videoRef.current.playbackRate !== playbackSpeed) {
-                  videoRef.current.playbackRate = playbackSpeed;
-                }
-              }}
-              onEnded={() => {
-                if (isLooping && videoRef.current) {
-                  videoRef.current.currentTime = 0;
-                  videoRef.current.play().catch(() => {});
-                }
-              }}
-              className={`w-full h-full transition-transform duration-300 origin-center ${
-                aspectMode === 'zoom' 
-                  ? 'object-cover scale-[1.33]' 
-                  : aspectMode === 'stretch' 
-                    ? 'object-fill scale-100' 
-                    : 'object-contain scale-100'
-              }`}
-            />
+                }}
+                onPlay={() => {
+                  if (videoRef.current) {
+                    videoRef.current.playbackRate = playbackSpeed;
+                    if (volumeBoost > 1.0 && audioCtxRef.current && gainNodeRef.current) {
+                      try {
+                        gainNodeRef.current.gain.setValueAtTime(volumeBoost, audioCtxRef.current.currentTime);
+                      } catch {}
+                    }
+                  }
+                }}
+                onRateChange={() => {
+                  if (videoRef.current && videoRef.current.playbackRate !== playbackSpeed) {
+                    videoRef.current.playbackRate = playbackSpeed;
+                  }
+                }}
+                onEnded={() => {
+                  if (isLooping && videoRef.current) {
+                    videoRef.current.currentTime = 0;
+                    videoRef.current.play().catch(() => {});
+                  }
+                }}
+                className={`w-full h-full transition-transform duration-300 origin-center ${
+                  aspectMode === 'zoom' 
+                    ? 'object-cover scale-[1.33]' 
+                    : aspectMode === 'stretch' 
+                      ? 'object-fill scale-100' 
+                      : 'object-contain scale-100'
+                }`}
+              />
+            )
           ) : (
             <div className="text-center p-8">
               <p className="text-slate-400 mb-4">No se puede reproducir directamente este formato en el navegador.</p>
@@ -912,7 +919,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
         </div>
 
         {/* Enhanced Player Controls Bar (Features & Audio Booster) */}
-        {isDirectVideo && !embedFailed && (!isNotion || Boolean(extractedVideo)) && (
+        {isDirectVideo && !embedFailed && (!isNotion || Boolean(extractedVideo) || hasS3Video) && (
           <div className="w-full px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between flex-wrap gap-2 text-xs text-slate-300">
             {/* Volume Booster Controls */}
             <div className="flex items-center gap-2">

@@ -11,6 +11,7 @@ import { PhotoViewer } from '@/components/viewers/PhotoViewer';
 import { VideoViewer } from '@/components/viewers/VideoViewer';
 import { DocumentViewer } from '@/components/viewers/DocumentViewer';
 import { OtherViewer } from '@/components/viewers/OtherViewer';
+import { ViewerErrorBoundary } from '@/components/common/ViewerErrorBoundary';
 import { PasswordUnlockModal } from '@/components/modals/PasswordUnlockModal';
 import { usePlayer } from '@/context/PlayerContext';
 import { 
@@ -205,7 +206,7 @@ function SharedFolderContent() {
       }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        return item.name.toLowerCase().includes(q);
+        return (item.name || '').toLowerCase().includes(q);
       }
       return true;
     });
@@ -480,29 +481,37 @@ function SharedFolderContent() {
       </main>
 
       {/* Viewers */}
-      <PhotoViewer
-        item={activePhoto}
-        itemsList={photosList}
-        onClose={() => setActivePhoto(null)}
-        onSelectNext={handleNextPhoto}
-        onSelectPrev={handlePrevPhoto}
-      />
+      <ViewerErrorBoundary onClose={() => setActivePhoto(null)} title="No se pudo abrir la imagen">
+        <PhotoViewer
+          item={activePhoto}
+          itemsList={photosList}
+          onClose={() => setActivePhoto(null)}
+          onSelectNext={handleNextPhoto}
+          onSelectPrev={handlePrevPhoto}
+        />
+      </ViewerErrorBoundary>
 
-      <VideoViewer
-        item={activeVideo}
-        onClose={() => setActiveVideo(null)}
-        readOnly={true}
-      />
+      <ViewerErrorBoundary onClose={() => setActiveVideo(null)} title="No se pudo reproducir el video">
+        <VideoViewer
+          item={activeVideo}
+          onClose={() => setActiveVideo(null)}
+          readOnly={true}
+        />
+      </ViewerErrorBoundary>
 
-      <DocumentViewer
-        item={activeDoc}
-        onClose={() => setActiveDoc(null)}
-      />
+      <ViewerErrorBoundary onClose={() => setActiveDoc(null)} title="No se pudo abrir el documento">
+        <DocumentViewer
+          item={activeDoc}
+          onClose={() => setActiveDoc(null)}
+        />
+      </ViewerErrorBoundary>
 
-      <OtherViewer
-        item={activeOther}
-        onClose={() => setActiveOther(null)}
-      />
+      <ViewerErrorBoundary onClose={() => setActiveOther(null)} title="No se pudo abrir el archivo">
+        <OtherViewer
+          item={activeOther}
+          onClose={() => setActiveOther(null)}
+        />
+      </ViewerErrorBoundary>
 
       <PasswordUnlockModal
         isOpen={Boolean(unlockingItem)}

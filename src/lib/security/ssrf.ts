@@ -62,8 +62,15 @@ export function isSafeNotionMediaUrl(urlString: string): boolean {
       return true;
     }
 
-    // Allow subdomains ONLY of notion.so or notion.site
-    if (hostname.endsWith('.notion.so') || hostname.endsWith('.notion.site')) {
+    // Allow subdomains ONLY of notion.so, notion.site, or notion.com
+    if (
+      hostname === 'notion.com' ||
+      hostname.endsWith('.notion.com') ||
+      hostname === 'notion.so' ||
+      hostname.endsWith('.notion.so') ||
+      hostname === 'notion.site' ||
+      hostname.endsWith('.notion.site')
+    ) {
       return true;
     }
 

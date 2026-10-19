@@ -56,7 +56,8 @@ export function DocumentViewer({ item, onClose, onPlayVideo, onEditDocument }: D
     }
 
     const directUrl = adapterRegistry.getDirectUrl(item);
-    const urlLower = item.url.toLowerCase();
+    const itemUrl = String(item.url || '');
+    const urlLower = itemUrl.toLowerCase();
     const isTextual = (
       urlLower.endsWith('.txt') ||
       urlLower.endsWith('.md') ||
@@ -64,7 +65,7 @@ export function DocumentViewer({ item, onClose, onPlayVideo, onEditDocument }: D
       urlLower.endsWith('.csv')
     );
 
-    if (item.provider === 'notion' || item.url.includes('notion.so') || item.url.includes('notion.site') || item.url.includes('notion.com') || item.url.includes('notion')) {
+    if (item.provider === 'notion' || itemUrl.includes('notion.so') || itemUrl.includes('notion.site') || itemUrl.includes('notion.com') || itemUrl.includes('notion')) {
       fetch('/api/notion/extract-page', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -165,9 +166,10 @@ export function DocumentViewer({ item, onClose, onPlayVideo, onEditDocument }: D
   };
 
   const directUrl = adapterRegistry.getDirectUrl(item);
-  const driveEmbedUrl = adapterRegistry.getEmbedUrl(item) || item.url.replace(/\/edit(\?.*)?$/, '/preview').replace(/\/view(\?.*)?$/, '/preview');
+  const itemUrl = String(item.url || '');
+  const driveEmbedUrl = adapterRegistry.getEmbedUrl(item) || (item.url ? item.url.replace(/\/edit(\?.*)?$/, '/preview').replace(/\/view(\?.*)?$/, '/preview') : '');
 
-  const urlLower = item.url.toLowerCase();
+  const urlLower = itemUrl.toLowerCase();
   const isPdf = urlLower.endsWith('.pdf') || item.mimeType === 'application/pdf';
   const isOffice = (
     urlLower.endsWith('.doc') ||
