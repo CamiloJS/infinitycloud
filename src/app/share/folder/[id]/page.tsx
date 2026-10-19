@@ -136,9 +136,10 @@ function SharedFolderContent() {
       return;
     }
 
+    const itemUrl = String(item.url || '');
     const isNotion = item.provider === 'notion' ||
-      item.url.includes('notion.so') ||
-      item.url.includes('notion.site');
+      itemUrl.includes('notion.so') ||
+      itemUrl.includes('notion.site');
 
     if (isNotion) {
       try {

@@ -156,10 +156,11 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     }
 
     // Trigger on-demand Notion video isolation if item is from Notion and doesn't have an isolated direct video stream yet
+    const itemUrl = String(item.url || '');
     const isNotion = item.provider === 'notion' || 
-                     item.url.includes('notion.so') || 
-                     item.url.includes('notion.site') || 
-                     item.url.includes('notion.com');
+                     itemUrl.includes('notion.so') || 
+                     itemUrl.includes('notion.site') || 
+                     itemUrl.includes('notion.com');
 
     const hasIsolatedStream = Boolean(item.metadata?.s3Url && savedS3IsStream);
 
@@ -458,17 +459,18 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     }
   };
 
-  const resolvedVideo = extractedVideo?.url || item.metadata?.s3Url || item.url;
+  const resolvedVideo = String(extractedVideo?.url || item.metadata?.s3Url || item.url || '');
+  const itemUrl = String(item.url || '');
   const isYoutube = (
-    item.url.includes('youtube.com') ||
-    item.url.includes('youtu.be') ||
-    Boolean(resolvedVideo.includes('youtube.com')) ||
-    Boolean(resolvedVideo.includes('youtu.be'))
+    itemUrl.includes('youtube.com') ||
+    itemUrl.includes('youtu.be') ||
+    resolvedVideo.includes('youtube.com') ||
+    resolvedVideo.includes('youtu.be')
   );
 
   const isVimeo = (
-    item.url.includes('vimeo.com') ||
-    Boolean(resolvedVideo.includes('vimeo.com'))
+    itemUrl.includes('vimeo.com') ||
+    resolvedVideo.includes('vimeo.com')
   );
 
   const embedUrl = adapterRegistry.getEmbedUrl({ ...item, url: resolvedVideo }) || (
@@ -488,9 +490,9 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   );
   
   const isNotion = item.provider === 'notion' || 
-                   item.url.includes('notion.so') || 
-                   item.url.includes('notion.site') || 
-                   item.url.includes('notion.com');
+                   itemUrl.includes('notion.so') || 
+                   itemUrl.includes('notion.site') || 
+                   itemUrl.includes('notion.com');
 
   const hasExtractedVideo = Boolean(extractedVideo?.url && isValidDirectVideoStream(extractedVideo.url));
   const hasS3Video = Boolean(item.metadata?.s3Url && isValidDirectVideoStream(item.metadata.s3Url));
@@ -503,21 +505,26 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     (!isNotion && (hasDirectUrlVideo || item.provider === 'direct' || isVideoExt || Boolean(item.mimeType?.startsWith('video/'))))
   );
 
-  const notionDirectUrl = (hasExtractedVideo ? extractedVideo.url : null) || (hasS3Video ? item.metadata?.s3Url : null) || (
+  const notionDirectUrl = (hasExtractedVideo ? extractedVideo?.url : null) || (hasS3Video ? item.metadata?.s3Url : null) || (
     item.provider === 'notion' && (item.metadata?.notionBlockId || item.metadata?.isNotionVideo)
       ? `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}&url=${encodeURIComponent(item.metadata?.s3Url || item.url)}${item.metadata?.notionBlockId ? `&blockId=${encodeURIComponent(item.metadata.notionBlockId)}` : ''}${item.metadata?.notionPageId ? `&pageId=${encodeURIComponent(item.metadata.notionPageId)}` : ''}`
       : directUrl
   );
 
-  const baseSrc = hasExtractedVideo 
-    ? extractedVideo.url 
-    : (hasS3Video 
-        ? item.metadata!.s3Url 
-        : (item.provider === 'notion' ? notionDirectUrl : directUrl));
+  const baseSrc: string = (hasExtractedVideo ? (extractedVideo?.url || '') : '') ||
+                          (hasS3Video ? (item.metadata?.s3Url || '') : '') ||
+                          (item.provider === 'notion' ? (notionDirectUrl || '') : (directUrl || ''));
 
-  const effectiveVideoSrc = (corsRetryState === 'proxy' || (volumeBoost > 1.0 && (baseSrc.includes('amazonaws.com') || baseSrc.includes('notion'))))
+  const shouldProxy = Boolean(
+    baseSrc && (
+      corsRetryState === 'proxy' || 
+      (volumeBoost > 1.0 && (baseSrc.includes('amazonaws.com') || baseSrc.includes('notion')))
+    )
+  );
+
+  const effectiveVideoSrc: string = shouldProxy
     ? `/api/proxy/media?url=${encodeURIComponent(baseSrc)}`
-    : baseSrc;
+    : (baseSrc || '');
 
   const handleVideoError = () => {
     if (corsRetryState === 'initial') {

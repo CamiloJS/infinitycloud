@@ -112,10 +112,11 @@ export default function HomePage() {
     }
 
     // Check if this item is from Notion or a video
+    const itemUrl = String(item.url || '');
     const isNotion = item.provider === 'notion' ||
-      item.url.includes('notion.so') ||
-      item.url.includes('notion.site') ||
-      item.url.includes('notion.com');
+      itemUrl.includes('notion.so') ||
+      itemUrl.includes('notion.site') ||
+      itemUrl.includes('notion.com');
 
     if (item.category === 'videos' || item.metadata?.isNotionVideo || isNotion) {
       setActiveVideo(item);
