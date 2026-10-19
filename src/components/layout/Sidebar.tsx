@@ -5,7 +5,7 @@ import { useItems } from '@/context/ItemsContext';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { Logo } from '@/components/ui/Logo';
-import { CategoryType } from '@/types';
+import { CategoryType, InfinityCollection } from '@/types';
 import { 
   Image, 
   Video, 
@@ -25,7 +25,9 @@ import {
   Laptop, 
   Users,
   Layers,
-  Sparkles
+  Sparkles,
+  Share2,
+  Globe
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -35,6 +37,7 @@ interface SidebarProps {
   onOpen2FaModal: () => void;
   onOpenCreateCollectionModal: () => void;
   onOpenRenameCollectionModal: (collId: string, currentName: string) => void;
+  onOpenShareCollectionModal?: (collection: InfinityCollection) => void;
 }
 
 export function Sidebar({
@@ -43,7 +46,8 @@ export function Sidebar({
   onOpenImportExportModal,
   onOpen2FaModal,
   onOpenCreateCollectionModal,
-  onOpenRenameCollectionModal
+  onOpenRenameCollectionModal,
+  onOpenShareCollectionModal
 }: SidebarProps) {
   const { 
     items, 
@@ -231,6 +235,11 @@ export function Sidebar({
                           style={{ backgroundColor: coll.color || '#8b5cf6' }}
                         />
                         <span className="truncate">{coll.name}</span>
+                        {coll.isShared && (
+                          <span title="Carpeta compartida públicamente">
+                            <Globe size={11} className="text-blue-500 shrink-0" />
+                          </span>
+                        )}
                       </div>
                       <span className="text-xs text-slate-400 font-mono">{count}</span>
                     </button>
@@ -246,7 +255,18 @@ export function Sidebar({
                       </button>
 
                       {activeMenuCollId === coll.id && (
-                        <div className="absolute right-0 top-8 z-30 w-36 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-1 text-xs animate-in fade-in duration-150">
+                        <div className="absolute right-0 top-8 z-30 w-40 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-1 text-xs animate-in fade-in duration-150">
+                          {onOpenShareCollectionModal && (
+                            <button
+                              onClick={() => {
+                                setActiveMenuCollId(null);
+                                onOpenShareCollectionModal(coll);
+                              }}
+                              className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 dark:text-blue-400 font-medium"
+                            >
+                              <Share2 size={13} /> Compartir
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               setActiveMenuCollId(null);

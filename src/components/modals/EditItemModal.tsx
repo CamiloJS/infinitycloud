@@ -13,7 +13,8 @@ import {
   Image as ImageIcon, 
   FileText, 
   Sparkles,
-  Sliders
+  Sliders,
+  ShieldCheck
 } from 'lucide-react';
 
 interface EditItemModalProps {
@@ -253,6 +254,12 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
                   value={item.url}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-500 truncate"
                 />
+                {item.metadata?.isNotionVideo && (
+                  <div className="mt-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex items-center gap-2">
+                    <ShieldCheck size={16} className="shrink-0 text-emerald-500" />
+                    <span>Video de Notion permanente: El sistema refresca la firma automáticamente para evitar caducidad.</span>
+                  </div>
+                )}
               </div>
             </div>
           )}

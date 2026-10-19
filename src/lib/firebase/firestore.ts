@@ -8,7 +8,7 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './client';
-import { InfinityItem, InfinityCollection } from '@/types';
+import { InfinityItem, InfinityCollection, PublicSharedFolder } from '@/types';
 import { ExportData, ExportDataSchema } from '../validation/schemas';
 
 const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
@@ -282,6 +282,13 @@ export async function saveCollection(userId: string, coll: InfinityCollection): 
       console.warn('Firestore collection write error:', e);
     }
   }
+
+  // Keep public share in sync if shared or unshared
+  try {
+    await syncSharedFolder(userId, cleanColl);
+  } catch (e) {
+    console.warn('Error syncing shared folder:', e);
+  }
 }
 
 /**
@@ -297,7 +304,12 @@ export async function deleteCollectionSafely(userId: string, collectionId: strin
   }
 
   const list = getLocalData<InfinityCollection>(userId, 'collections');
+  const targetColl = list.find(c => c.id === collectionId);
   setLocalData(userId, 'collections', list.filter(c => c.id !== collectionId));
+
+  if (targetColl?.isShared) {
+    await syncSharedFolder(userId, { ...targetColl, isShared: false });
+  }
 
   if (isFirestoreActive) {
     try {
@@ -419,4 +431,164 @@ export async function importUserData(
       message: err.message || 'El archivo JSON no tiene un formato válido para Infinity.'
     };
   }
+}
+
+// ==========================================
+// CARPETAS COMPARTIDAS PÚBLICAMENTE
+// ==========================================
+
+export async function syncSharedFolder(userId: string, coll: InfinityCollection): Promise<void> {
+  const publicShareKey = `infinity_public_share_${coll.id}`;
+
+  if (!coll.isShared) {
+    // Unshare: remove from local cache and firestore
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(publicShareKey);
+    }
+    if (isFirestoreActive) {
+      try {
+        const shareRef = doc(db, 'public_shares', coll.id);
+        await deleteDoc(shareRef);
+      } catch (e) {
+        console.warn('Error removing public share:', e);
+      }
+    }
+    return;
+  }
+
+  // Fetch active items inside this collection
+  const items = await fetchUserItems(userId);
+  const collectionItems = items
+    .filter(i => !i.isTrash && i.collectionId === coll.id)
+    .map(i => ({
+      ...i,
+      // Don't leak raw internal password hash in public item representation
+      passwordHash: i.passwordHash ? 'PROTECTED' : undefined
+    }));
+
+  const publicData: PublicSharedFolder = {
+    id: coll.id,
+    userId,
+    name: coll.name,
+    description: coll.description || '',
+    color: coll.color || '#8b5cf6',
+    itemCount: collectionItems.length,
+    isShared: true,
+    isProtected: Boolean(coll.sharePasswordHash),
+    requiresPassword: Boolean(coll.sharePasswordHash),
+    items: coll.sharePasswordHash ? [] : collectionItems,
+    updatedAt: Date.now()
+  };
+
+  // If protected, store sanitized public record in firestore, with hash only for verification
+  const firestorePayload = sanitizeForFirestore<any>({
+    ...publicData,
+    sharePasswordHash: coll.sharePasswordHash || undefined,
+    // Store full items in firestore doc so verified visitors can access them
+    securedItems: coll.sharePasswordHash ? collectionItems : undefined
+  });
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(publicShareKey, JSON.stringify({
+        ...publicData,
+        sharePasswordHash: coll.sharePasswordHash,
+        securedItems: coll.sharePasswordHash ? collectionItems : undefined
+      }));
+    } catch (e) {
+      console.warn('Error saving local public share:', e);
+    }
+  }
+
+  if (isFirestoreActive) {
+    try {
+      const shareRef = doc(db, 'public_shares', coll.id);
+      await setDoc(shareRef, firestorePayload, { merge: true });
+    } catch (e) {
+      console.warn('Error saving public share to firestore:', e);
+    }
+  }
+}
+
+export async function fetchPublicFolder(
+  collectionId: string, 
+  passwordAttemptHash?: string
+): Promise<PublicSharedFolder | null> {
+  let shareDoc: any = null;
+
+  // 1. Try Firestore first
+  if (isFirestoreActive) {
+    try {
+      const docRef = doc(db, 'public_shares', collectionId);
+      const snapshot = await getDoc(docRef);
+      if (snapshot.exists()) {
+        shareDoc = snapshot.data();
+      }
+    } catch (e) {
+      console.warn('Error fetching public share from Firestore:', e);
+    }
+  }
+
+  // 2. Fallback to localStorage
+  if (!shareDoc && typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(`infinity_public_share_${collectionId}`);
+      if (raw) shareDoc = JSON.parse(raw);
+    } catch (e) {}
+  }
+
+  if (!shareDoc || !shareDoc.isShared) {
+    return null;
+  }
+
+  const isProtected = Boolean(shareDoc.sharePasswordHash);
+
+  if (isProtected) {
+    if (!passwordAttemptHash || passwordAttemptHash !== shareDoc.sharePasswordHash) {
+      // Return metadata without items
+      return {
+        id: shareDoc.id || collectionId,
+        userId: shareDoc.userId,
+        name: shareDoc.name || 'Carpeta Compartida',
+        description: shareDoc.description || '',
+        color: shareDoc.color || '#8b5cf6',
+        itemCount: shareDoc.itemCount || 0,
+        isShared: true,
+        isProtected: true,
+        requiresPassword: true,
+        items: [],
+        updatedAt: shareDoc.updatedAt || Date.now()
+      };
+    }
+
+    // Password verified! Return items
+    return {
+      id: shareDoc.id || collectionId,
+      userId: shareDoc.userId,
+      name: shareDoc.name || 'Carpeta Compartida',
+      description: shareDoc.description || '',
+      color: shareDoc.color || '#8b5cf6',
+      itemCount: shareDoc.itemCount || (shareDoc.securedItems?.length ?? 0),
+      isShared: true,
+      isProtected: true,
+      requiresPassword: false,
+      items: shareDoc.securedItems || shareDoc.items || [],
+      updatedAt: shareDoc.updatedAt || Date.now()
+    };
+  }
+
+  // Public unshielded folder
+  return {
+    id: shareDoc.id || collectionId,
+    userId: shareDoc.userId,
+    name: shareDoc.name || 'Carpeta Compartida',
+    description: shareDoc.description || '',
+    color: shareDoc.color || '#8b5cf6',
+    itemCount: shareDoc.itemCount || (shareDoc.items?.length ?? 0),
+    isShared: true,
+    isProtected: false,
+    requiresPassword: false,
+    items: shareDoc.items || [],
+    updatedAt: shareDoc.updatedAt || Date.now()
+  };
 }

@@ -282,6 +282,13 @@ export function VideoViewer({ item, onClose }: VideoViewerProps) {
               autoPlay
               playsInline
               crossOrigin="anonymous"
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (target.getAttribute('crossOrigin')) {
+                  target.removeAttribute('crossOrigin');
+                  target.load();
+                }
+              }}
               className={`w-full h-full ${isCoverFit ? 'object-cover' : 'object-contain'}`}
             />
           ) : (

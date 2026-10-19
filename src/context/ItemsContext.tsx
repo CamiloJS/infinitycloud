@@ -57,6 +57,7 @@ interface ItemsContextType {
 
   createCollection: (name: string, color?: string) => Promise<InfinityCollection>;
   renameCollection: (id: string, newName: string) => Promise<void>;
+  updateCollectionShare: (id: string, isShared: boolean, sharePasswordHash?: string, description?: string) => Promise<InfinityCollection | undefined>;
   deleteCollection: (id: string) => Promise<void>;
 
   exportDataJson: () => Promise<string>;
@@ -132,12 +133,15 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
     const detected = await adapterRegistry.detect(url);
     const finalName = customName?.trim() || detected.name;
     const finalCategory = customCategory || detected.category;
+    const finalUrl = (detected.metadata?.isNotionVideo && detected.metadata?.s3Url) 
+      ? detected.metadata.s3Url 
+      : url;
 
     const newItem: InfinityItem = {
       id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       userId,
       name: finalName,
-      url,
+      url: finalUrl,
       provider: detected.provider,
       category: finalCategory,
       mimeType: detected.mimeType,
@@ -213,6 +217,26 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
     const updated = { ...coll, name: newName.trim(), updatedAt: Date.now() };
     await saveCollection(userId, updated);
     setCollections(prev => prev.map(c => c.id === id ? updated : c));
+  };
+
+  const updateCollectionShare = async (
+    id: string, 
+    isShared: boolean, 
+    sharePasswordHash?: string, 
+    description?: string
+  ): Promise<InfinityCollection | undefined> => {
+    const coll = collections.find(c => c.id === id);
+    if (!coll) return undefined;
+    const updated: InfinityCollection = {
+      ...coll,
+      isShared,
+      sharePasswordHash: isShared ? (sharePasswordHash || undefined) : undefined,
+      description: description !== undefined ? description.trim() : coll.description,
+      updatedAt: Date.now()
+    };
+    await saveCollection(userId, updated);
+    setCollections(prev => prev.map(c => c.id === id ? updated : c));
+    return updated;
   };
 
   const deleteCollection = async (id: string) => {
@@ -313,6 +337,7 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
         moveToCollection,
         createCollection,
         renameCollection,
+        updateCollectionShare,
         deleteCollection,
         exportDataJson,
         importDataJson,

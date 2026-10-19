@@ -39,9 +39,26 @@ export interface InfinityCollection {
   id: string;
   userId: string;
   name: string;
+  description?: string;
   color?: string;
   icon?: string;
+  isShared?: boolean;
+  sharePasswordHash?: string;
   createdAt: number;
+  updatedAt: number;
+}
+
+export interface PublicSharedFolder {
+  id: string;
+  userId?: string;
+  name: string;
+  description?: string;
+  color?: string;
+  itemCount: number;
+  isShared: boolean;
+  isProtected?: boolean;
+  requiresPassword?: boolean;
+  items: InfinityItem[];
   updatedAt: number;
 }
 

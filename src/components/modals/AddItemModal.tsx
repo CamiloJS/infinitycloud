@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useItems } from '@/context/ItemsContext';
 import { adapterRegistry } from '@/lib/adapters/registry';
 import { CategoryType, ProviderType } from '@/types';
-import { X, Link2, Check } from 'lucide-react';
+import { X, Link2, Check, Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
 
 interface AddItemModalProps {
   isOpen: boolean;
@@ -18,6 +18,8 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
   const [category, setCategory] = useState<CategoryType>('others');
   const [collectionId, setCollectionId] = useState<string>('');
   const [detectedProvider, setDetectedProvider] = useState<ProviderType | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [notionVideoDetected, setNotionVideoDetected] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,6 +30,8 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       setCategory('others');
       setCollectionId('');
       setDetectedProvider(null);
+      setIsAnalyzing(false);
+      setNotionVideoDetected(false);
       setError(null);
     }
   }, [isOpen]);
@@ -37,22 +41,32 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
     const trimmed = url.trim();
     if (!trimmed || !trimmed.startsWith('http')) {
       setDetectedProvider(null);
+      setIsAnalyzing(false);
+      setNotionVideoDetected(false);
       return;
     }
 
+    setIsAnalyzing(true);
     const timer = setTimeout(async () => {
       setError(null);
       try {
         const detected = await adapterRegistry.detect(trimmed);
         setDetectedProvider(detected.provider);
         setCategory(detected.category);
-        if (!name.trim() || name === 'Video de YouTube' || name.startsWith('Video (')) {
+        if (!name.trim() || name === 'Video de YouTube' || name.startsWith('Video (') || name === 'Recurso de Notion' || name === 'Página de Notion') {
           setName(detected.name);
+        }
+        if (detected.metadata?.isNotionVideo) {
+          setNotionVideoDetected(true);
+        } else {
+          setNotionVideoDetected(false);
         }
       } catch {
         // ignore
+      } finally {
+        setIsAnalyzing(false);
       }
-    }, 300);
+    }, 350);
 
     return () => clearTimeout(timer);
   }, [url]);
@@ -122,12 +136,30 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                 placeholder="https://..."
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm text-slate-800 dark:text-white outline-none focus:border-blue-500 transition-colors font-mono text-xs"
               />
-              {detectedProvider && (
-                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/20">
-                  {detectedProvider === 'youtube' ? 'video' : detectedProvider}
-                </div>
-              )}
+              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                {isAnalyzing && (
+                  <Loader2 size={14} className="text-blue-500 animate-spin" />
+                )}
+                {detectedProvider && (
+                  <div className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-bold uppercase tracking-wider border border-blue-500/20">
+                    {detectedProvider === 'youtube' ? 'video' : detectedProvider}
+                  </div>
+                )}
+              </div>
             </div>
+            {notionVideoDetected && (
+              <div className="mt-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex items-start gap-2.5 animate-in fade-in duration-200">
+                <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-500" />
+                <div>
+                  <p className="font-semibold text-emerald-700 dark:text-emerald-300">
+                    Video extraído automáticamente de Notion
+                  </p>
+                  <p className="text-[11px] text-emerald-600/90 dark:text-emerald-400/90 mt-0.5">
+                    Se aisló el video principal de la página para que se reproduzca directamente sin el resto de la página. El enlace se mantendrá permanente y se renovará automáticamente sin expirar.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div>

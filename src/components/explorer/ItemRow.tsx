@@ -27,8 +27,8 @@ import {
 interface ItemRowProps {
   item: InfinityItem;
   onOpen: (item: InfinityItem) => void;
-  onEdit: (item: InfinityItem) => void;
-  onMove: (item: InfinityItem) => void;
+  onEdit?: (item: InfinityItem) => void;
+  onMove?: (item: InfinityItem) => void;
 }
 
 export function ItemRow({ item, onOpen, onEdit, onMove }: ItemRowProps) {
@@ -170,33 +170,39 @@ export function ItemRow({ item, onOpen, onEdit, onMove }: ItemRowProps) {
                   >
                     <Play size={13} /> Abrir visor
                   </button>
-                  <button
-                    onClick={() => {
-                      setShowMenu(false);
-                      onEdit(item);
-                    }}
-                    className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
-                  >
-                    <Sliders size={13} /> Editar información
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowMenu(false);
-                      onEdit(item);
-                    }}
-                    className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
-                  >
-                    <Edit3 size={13} /> Editar nombre
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowMenu(false);
-                      onMove(item);
-                    }}
-                    className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
-                  >
-                    <FolderInput size={13} /> Mover a colección
-                  </button>
+                  {onEdit && (
+                    <>
+                      <button
+                        onClick={() => {
+                          setShowMenu(false);
+                          onEdit(item);
+                        }}
+                        className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                      >
+                        <Sliders size={13} /> Editar información
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowMenu(false);
+                          onEdit(item);
+                        }}
+                        className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                      >
+                        <Edit3 size={13} /> Editar nombre
+                      </button>
+                    </>
+                  )}
+                  {onMove && (
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        onMove(item);
+                      }}
+                      className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                    >
+                      <FolderInput size={13} /> Mover a colección
+                    </button>
+                  )}
                   <button
                     onClick={copyUrl}
                     className="w-full px-3 py-1.5 text-left flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"

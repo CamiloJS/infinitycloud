@@ -25,12 +25,14 @@ import { NotionImportModal } from '@/components/modals/NotionImportModal';
 import { ImportExportModal } from '@/components/modals/ImportExportModal';
 import { TwoFactorModal } from '@/components/modals/TwoFactorModal';
 import { TwoFactorChallengeModal } from '@/components/modals/TwoFactorChallengeModal';
-import { InfinityItem } from '@/types';
+import { ShareFolderModal } from '@/components/modals/ShareFolderModal';
+import { InfinityItem, InfinityCollection } from '@/types';
 import { 
   Trash2, 
   Clock, 
   Star, 
-  ChevronRight 
+  ChevronRight,
+  Share2
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -61,6 +63,7 @@ export default function HomePage() {
   const [collectionModalOpen, setCollectionModalOpen] = useState<boolean>(false);
   const [editingCollId, setEditingCollId] = useState<string | null>(null);
   const [editingCollName, setEditingCollName] = useState<string>('');
+  const [sharingColl, setSharingColl] = useState<InfinityCollection | null>(null);
 
   // Item Modals
   const [editingItem, setEditingItem] = useState<InfinityItem | null>(null);
@@ -160,6 +163,7 @@ export default function HomePage() {
           setEditingCollName(name);
           setCollectionModalOpen(true);
         }}
+        onOpenShareCollectionModal={(coll) => setSharingColl(coll)}
       />
 
       {/* Mobile Navigation Drawer */}
@@ -206,6 +210,14 @@ export default function HomePage() {
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: activeColl.color || '#8b5cf6' }} />
                     {activeColl.name}
                   </span>
+                  <button
+                    onClick={() => setSharingColl(activeColl)}
+                    className="ml-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    title="Compartir esta carpeta con un enlace público"
+                  >
+                    <Share2 size={13} />
+                    <span>Compartir carpeta</span>
+                  </button>
                 </>
               )}
               {activeView === 'favorites' && (
@@ -365,6 +377,12 @@ export default function HomePage() {
         onClose={() => setCollectionModalOpen(false)}
         collIdToEdit={editingCollId}
         initialName={editingCollName}
+      />
+
+      <ShareFolderModal
+        isOpen={Boolean(sharingColl)}
+        onClose={() => setSharingColl(null)}
+        collection={sharingColl}
       />
 
       <NotionImportModal

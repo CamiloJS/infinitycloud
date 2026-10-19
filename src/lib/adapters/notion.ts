@@ -46,30 +46,81 @@ export class NotionAdapter implements ProviderAdapter {
   async detect(urlString: string): Promise<DetectedMetadata> {
     const id = this.extractPageOrBlockId(urlString);
     let title = 'Recurso de Notion';
+    let isVideo = false;
+
     try {
       const url = new URL(urlString);
+      const pathname = url.pathname.toLowerCase();
       const last = url.pathname.split('/').filter(Boolean).pop();
       if (last) {
         title = decodeURIComponent(last.replace(/-/g, ' '));
+      }
+
+      // Check if URL directly points to a video file
+      if (
+        pathname.endsWith('.mp4') ||
+        pathname.endsWith('.mov') ||
+        pathname.endsWith('.webm') ||
+        pathname.endsWith('.m4v') ||
+        pathname.endsWith('.ogv')
+      ) {
+        isVideo = true;
       }
     } catch {
       // ignore
     }
 
+    // Client-side extraction: if it's a Notion page, attempt to auto-extract video from page
+    if (typeof window !== 'undefined' && (urlString.includes('notion.so') || urlString.includes('notion.site'))) {
+      try {
+        const res = await fetch('/api/notion/extract-page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: urlString })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.foundVideo && data.video) {
+            return {
+              name: data.video.title || title,
+              provider: 'notion',
+              category: 'videos',
+              thumbnailUrl: data.video.coverUrl || undefined,
+              metadata: {
+                notionId: id || undefined,
+                notionPageId: data.video.notionPageId,
+                notionBlockId: data.video.notionBlockId,
+                originalUrl: urlString,
+                extractedFromPage: true,
+                isNotionVideo: true,
+                s3Url: data.video.url,
+                expiryTime: data.video.expiryTime
+              }
+            };
+          } else if (data.pageTitle) {
+            title = data.pageTitle;
+          }
+        }
+      } catch {
+        // Fallback to basic detection
+      }
+    }
+
     return {
       name: title,
       provider: 'notion',
-      category: 'documents',
+      category: isVideo ? 'videos' : 'documents',
       metadata: {
         notionId: id || undefined,
-        originalUrl: urlString
+        originalUrl: urlString,
+        isNotionVideo: isVideo
       }
     };
   }
 
   getDirectUrl(item: InfinityItem): string {
     // If it's a Notion hosted file with signed URL, we route through our secure refresh proxy
-    if (item.metadata?.notionBlockId || item.metadata?.notionPageId) {
+    if (item.metadata?.notionBlockId || item.metadata?.notionPageId || item.metadata?.isNotionVideo) {
       return `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}`;
     }
     return item.url;
