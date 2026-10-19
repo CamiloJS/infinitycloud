@@ -9,6 +9,7 @@ interface ServerStorageSchema {
   settings: Record<string, Record<string, any>>;
   items: Record<string, InfinityItem[]>;
   collections: Record<string, InfinityCollection[]>;
+  shares?: Record<string, any>;
 }
 
 function loadLocalStore(): ServerStorageSchema {
@@ -16,26 +17,26 @@ function loadLocalStore(): ServerStorageSchema {
     if (fs.existsSync(DATA_FILE_PATH)) {
       const content = fs.readFileSync(DATA_FILE_PATH, 'utf-8').trim();
       if (content) {
-        return JSON.parse(content);
+        const parsed = JSON.parse(content);
+        return {
+          settings: parsed.settings || {},
+          items: parsed.items || {},
+          collections: parsed.collections || {},
+          shares: parsed.shares || {}
+        };
       }
     }
   } catch (err) {
     // Graceful fallback if empty or during concurrent write
   }
-  return { settings: {}, items: {}, collections: {} };
+  return { settings: {}, items: {}, collections: {}, shares: {} };
 }
 
 function saveLocalStore(data: ServerStorageSchema): void {
   try {
-    const tempPath = `${DATA_FILE_PATH}.${process.pid}.${Date.now()}.tmp`;
-    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
-    fs.renameSync(tempPath, DATA_FILE_PATH);
+    fs.writeFileSync(DATA_FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
-    try {
-      fs.writeFileSync(DATA_FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
-    } catch {
-      // ignore
-    }
+    console.warn('Could not write to .server_data.json:', err);
   }
 }
 

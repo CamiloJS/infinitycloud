@@ -83,8 +83,10 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   const [volumeBoost, setVolumeBoost] = useState<number>(1.0); // 1.0 (100%), 1.5, 2.0 (2x), 3.0 (3x)
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [isLooping, setIsLooping] = useState<boolean>(false);
-  const [isCoverFit, setIsCoverFit] = useState<boolean>(false);
+  const [aspectMode, setAspectMode] = useState<'contain' | 'zoom' | 'stretch'>('contain');
   const [snapshotSuccess, setSnapshotSuccess] = useState<boolean>(false);
+  const [isCapturingSnapshot, setIsCapturingSnapshot] = useState<boolean>(false);
+  const [snapshotMessage, setSnapshotMessage] = useState<string | null>(null);
   const [corsRetryState, setCorsRetryState] = useState<'initial' | 'proxy' | 'nocors'>('initial');
   const [isExtractingNotion, setIsExtractingNotion] = useState<boolean>(false);
   const [extractedVideo, setExtractedVideo] = useState<any>(null);
@@ -100,6 +102,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
 
   useEffect(() => {
     return () => {
@@ -116,7 +119,8 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     setVolumeBoost(1.0);
     setPlaybackSpeed(1.0);
     setIsLooping(false);
-    setIsCoverFit(false);
+    setAspectMode('contain');
+    setSnapshotMessage(null);
     setCorsRetryState('initial');
     setExtractedVideo(null);
     setNotionSiteUrl(null);
@@ -254,40 +258,52 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   };
 
   // Web Audio Booster for HTML5 Video
-  const applyVolumeBoost = (boostMultiplier: number) => {
+  const applyVolumeBoost = async (boostMultiplier: number) => {
     setVolumeBoost(boostMultiplier);
-    if (!videoRef.current) return;
+    const video = videoRef.current;
+    if (!video) return;
 
-    if (corsRetryState === 'nocors') {
-      // Cross-origin element without CORS grant; Web Audio would mute audio by browser policy.
-      // Gracefully maintain max native volume without cutting sound.
-      videoRef.current.volume = 1.0;
-      return;
+    if (video.muted) {
+      video.muted = false;
     }
+    video.volume = 1.0;
 
     try {
-      if (!audioCtxRef.current) {
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
         if (AudioCtx) {
-          const ctx = new AudioCtx();
-          const source = ctx.createMediaElementSource(videoRef.current);
-          const gainNode = ctx.createGain();
-          source.connect(gainNode);
-          gainNode.connect(ctx.destination);
-          audioCtxRef.current = ctx;
-          gainNodeRef.current = gainNode;
+          audioCtxRef.current = new AudioCtx();
         }
       }
 
-      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-        audioCtxRef.current.resume();
+      const ctx = audioCtxRef.current;
+      if (!ctx) return;
+
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+
+      if (!(video as any).__audioSourceNode) {
+        const source = ctx.createMediaElementSource(video);
+        const gain = ctx.createGain();
+        source.connect(gain);
+        gain.connect(ctx.destination);
+        (video as any).__audioSourceNode = source;
+        (video as any).__gainNode = gain;
+        sourceNodeRef.current = source;
+        gainNodeRef.current = gain;
+      } else {
+        sourceNodeRef.current = (video as any).__audioSourceNode;
+        gainNodeRef.current = (video as any).__gainNode;
       }
 
       if (gainNodeRef.current) {
-        gainNodeRef.current.gain.value = boostMultiplier;
+        gainNodeRef.current.gain.cancelScheduledValues(ctx.currentTime);
+        gainNodeRef.current.gain.setValueAtTime(boostMultiplier, ctx.currentTime);
       }
     } catch (err) {
       console.warn('Audio boost error:', err);
+      if (video) video.volume = 1.0;
     }
   };
 
@@ -295,8 +311,16 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     setPlaybackSpeed(speed);
     if (videoRef.current) {
       videoRef.current.playbackRate = speed;
+      videoRef.current.defaultPlaybackRate = speed;
     }
   };
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = playbackSpeed;
+      videoRef.current.defaultPlaybackRate = playbackSpeed;
+    }
+  }, [playbackSpeed]);
 
   const toggleLoop = () => {
     const next = !isLooping;
@@ -307,11 +331,23 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   };
 
   const togglePiP = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
-      } else if (videoRef.current && 'requestPictureInPicture' in videoRef.current) {
-        await videoRef.current.requestPictureInPicture();
+      } else if ('requestPictureInPicture' in video) {
+        if (video.readyState < 1) {
+          await new Promise<void>((resolve) => {
+            const onMeta = () => {
+              video.removeEventListener('loadedmetadata', onMeta);
+              resolve();
+            };
+            video.addEventListener('loadedmetadata', onMeta);
+          });
+        }
+        await video.requestPictureInPicture();
       }
     } catch (err) {
       console.warn('Picture-in-Picture error:', err);
@@ -319,22 +355,40 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
   };
 
   const captureFrameAsThumbnail = async () => {
-    if (!videoRef.current || !item) return;
+    const video = videoRef.current;
+    if (!video || !item || isCapturingSnapshot) return;
+
+    setIsCapturingSnapshot(true);
+    setSnapshotMessage('Capturando...');
 
     try {
+      if (video.readyState < 2) {
+        setSnapshotMessage('Inicia el video primero');
+        setTimeout(() => setSnapshotMessage(null), 2500);
+        return;
+      }
+
       const canvas = document.createElement('canvas');
       canvas.width = 640;
       canvas.height = 360;
       const ctx = canvas.getContext('2d');
-      if (ctx) {
-        drawCoverCrop(ctx, videoRef.current, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-        await editItem(item.id, { thumbnailUrl: dataUrl });
-        setSnapshotSuccess(true);
-        setTimeout(() => setSnapshotSuccess(false), 3000);
-      }
+      if (!ctx) throw new Error('No canvas context');
+
+      drawCoverCrop(ctx, video, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      await editItem(item.id, { thumbnailUrl: dataUrl });
+      setSnapshotSuccess(true);
+      setSnapshotMessage('¡Guardada!');
+      setTimeout(() => {
+        setSnapshotSuccess(false);
+        setSnapshotMessage(null);
+      }, 3000);
     } catch (err) {
       console.warn('Capture thumbnail frame error:', err);
+      setSnapshotMessage('Error de captura');
+      setTimeout(() => setSnapshotMessage(null), 3000);
+    } finally {
+      setIsCapturingSnapshot(false);
     }
   };
 
@@ -592,7 +646,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
 
         {/* Video Player Display */}
         <div 
-          className={`relative w-full bg-black flex items-center justify-center ${
+          className={`relative w-full bg-black flex items-center justify-center overflow-hidden ${
             isMaximized ? 'w-full h-full flex-1 min-h-0' : 'aspect-video'
           }`}
         >
@@ -745,15 +799,49 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
             />
           ) : isDirectVideo ? (
             <video
-              key={`${item.id}_${corsRetryState}_${extractedVideo ? 'extracted' : 'direct'}`}
               ref={videoRef}
               src={effectiveVideoSrc}
               controls
               autoPlay
               playsInline
+              loop={isLooping}
               crossOrigin={corsRetryState === 'nocors' ? undefined : 'anonymous'}
               onError={handleVideoError}
-              className={`w-full h-full ${isCoverFit ? 'object-cover' : 'object-contain'}`}
+              onLoadedMetadata={() => {
+                if (videoRef.current) {
+                  videoRef.current.playbackRate = playbackSpeed;
+                  videoRef.current.defaultPlaybackRate = playbackSpeed;
+                  videoRef.current.loop = isLooping;
+                }
+              }}
+              onPlay={() => {
+                if (videoRef.current) {
+                  videoRef.current.playbackRate = playbackSpeed;
+                  if (volumeBoost > 1.0 && audioCtxRef.current && gainNodeRef.current) {
+                    try {
+                      gainNodeRef.current.gain.setValueAtTime(volumeBoost, audioCtxRef.current.currentTime);
+                    } catch {}
+                  }
+                }
+              }}
+              onRateChange={() => {
+                if (videoRef.current && videoRef.current.playbackRate !== playbackSpeed) {
+                  videoRef.current.playbackRate = playbackSpeed;
+                }
+              }}
+              onEnded={() => {
+                if (isLooping && videoRef.current) {
+                  videoRef.current.currentTime = 0;
+                  videoRef.current.play().catch(() => {});
+                }
+              }}
+              className={`w-full h-full transition-transform duration-300 origin-center ${
+                aspectMode === 'zoom' 
+                  ? 'object-cover scale-[1.33]' 
+                  : aspectMode === 'stretch' 
+                    ? 'object-fill scale-100' 
+                    : 'object-contain scale-100'
+              }`}
             />
           ) : (
             <div className="text-center p-8">
@@ -861,31 +949,50 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
 
               {/* Aspect Ratio Fit */}
               <button
-                onClick={() => setIsCoverFit(f => !f)}
-                className={`px-2 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1 transition-all ${
-                  isCoverFit 
-                    ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' 
+                onClick={() => {
+                  setAspectMode(prev => {
+                    if (prev === 'contain') return 'zoom';
+                    if (prev === 'zoom') return 'stretch';
+                    return 'contain';
+                  });
+                }}
+                className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1.5 transition-all ${
+                  aspectMode !== 'contain' 
+                    ? 'bg-blue-600/30 border-blue-500/50 text-blue-300 shadow-sm' 
                     : 'bg-slate-800 border-slate-700/60 text-slate-400 hover:text-white'
                 }`}
-                title="Alternar entre ajustar a pantalla o rellenar"
+                title="Ajustar aspecto: 16:9 (normal) -> Zoom (sin franjas negras) -> Estirar"
               >
-                <Ratio size={13} />
-                <span>{isCoverFit ? 'Rellenar' : '16:9'}</span>
+                <Ratio size={13} className={aspectMode !== 'contain' ? 'text-blue-400' : ''} />
+                <span>
+                  {aspectMode === 'zoom' 
+                    ? 'Zoom (Sin franjas)' 
+                    : aspectMode === 'stretch' 
+                      ? 'Estirar' 
+                      : '16:9'}
+                </span>
               </button>
 
               {/* Snapshot Frame as Thumbnail (only when editable) */}
               {!readOnly && (
                 <button
                   onClick={captureFrameAsThumbnail}
-                  className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1 transition-all ${
+                  disabled={isCapturingSnapshot}
+                  className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1.5 transition-all ${
                     snapshotSuccess
                       ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                      : 'bg-slate-800 border-slate-700/60 text-slate-300 hover:text-white'
+                      : 'bg-slate-800 border-slate-700/60 text-slate-300 hover:text-white disabled:opacity-60'
                   }`}
                   title="Capturar fotograma actual y usarlo como miniatura del video"
                 >
-                  {snapshotSuccess ? <Check size={13} /> : <Camera size={13} />}
-                  <span>{snapshotSuccess ? '¡Guardada!' : 'Capturar miniatura'}</span>
+                  {isCapturingSnapshot ? (
+                    <Loader2 size={13} className="animate-spin text-blue-400" />
+                  ) : snapshotSuccess ? (
+                    <Check size={13} />
+                  ) : (
+                    <Camera size={13} />
+                  )}
+                  <span>{snapshotMessage || (snapshotSuccess ? '¡Guardada!' : 'Capturar miniatura')}</span>
                 </button>
               )}
 
