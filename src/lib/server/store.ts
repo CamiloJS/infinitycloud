@@ -84,7 +84,7 @@ export async function fetchServerItems(userId: string): Promise<InfinityItem[]> 
   if (isFirebaseAdminConfigured && adminDb) {
     try {
       const snap = await adminDb.collection('users').doc(userId).collection('items').get();
-      return snap.docs.map(d => ({ id: d.id, ...d.data() } as InfinityItem));
+      return snap.docs.map((d: any) => ({ id: d.id, ...d.data() } as InfinityItem));
     } catch (err) {
       console.warn('Firebase Admin fetchServerItems failed, falling back:', err);
     }
