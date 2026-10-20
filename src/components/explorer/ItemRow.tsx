@@ -122,19 +122,11 @@ export function ItemRow({ item, onOpen, onEdit, onMove, readOnly }: ItemRowProps
             )}
           </div>
 
-          {(item.isProtected || coll) && (
+          {item.isProtected && (
             <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
-              {item.isProtected && (
-                <span className="text-[10px] text-amber-500 flex items-center gap-0.5 font-semibold">
-                  <Lock size={10} /> Protegido
-                </span>
-              )}
-              {coll && (
-                <span className="flex items-center gap-1 text-[11px]">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: coll.color || '#8b5cf6' }} />
-                  <span>{coll.name}</span>
-                </span>
-              )}
+              <span className="text-[10px] text-amber-500 flex items-center gap-0.5 font-semibold">
+                <Lock size={10} /> Protegido
+              </span>
             </div>
           )}
         </div>

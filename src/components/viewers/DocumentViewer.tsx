@@ -200,9 +200,6 @@ export function DocumentViewer({ item, onClose, onPlayVideo, onEditDocument }: D
           <div className="flex items-center gap-3 truncate max-w-lg">
             <FileText className="text-blue-500 shrink-0" size={20} />
             <span className="font-semibold text-slate-800 dark:text-white truncate text-base">{item.name}</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 uppercase tracking-wider font-semibold">
-              {item.provider}
-            </span>
           </div>
 
           <div className="flex items-center gap-2">

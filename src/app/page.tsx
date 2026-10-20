@@ -7,7 +7,7 @@ import { usePlayer } from '@/context/PlayerContext';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { MobileNav } from '@/components/layout/MobileNav';
-import { CategoryCards } from '@/components/explorer/CategoryCards';
+import { SpotifyMusicView } from '@/components/explorer/SpotifyMusicView';
 import { ItemCard } from '@/components/explorer/ItemCard';
 import { ItemRow } from '@/components/explorer/ItemRow';
 import { FolderCard } from '@/components/explorer/FolderCard';
@@ -300,9 +300,6 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Category Chips (in main library) */}
-          <CategoryCards />
-
           {/* Folders Section in Root Library View */}
           {activeView === 'library' && !activeCollectionId && activeCategory === 'all' && collections.length > 0 && (
             <div className="mb-8 animate-in fade-in duration-200">
@@ -436,6 +433,12 @@ export default function HomePage() {
             <GooglePhotosView
               items={filteredItems}
               onOpen={handleOpenItem}
+              onEdit={(it) => setEditingItem(it)}
+              onMove={(it) => setMovingItem(it)}
+            />
+          ) : activeCategory === 'music' ? (
+            <SpotifyMusicView
+              items={filteredItems}
               onEdit={(it) => setEditingItem(it)}
               onMove={(it) => setMovingItem(it)}
             />

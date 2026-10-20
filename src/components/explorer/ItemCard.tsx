@@ -88,9 +88,37 @@ export function ItemCard({ item, onOpen, onEdit, onMove, readOnly }: ItemCardPro
       }}
       className="group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:border-blue-500/40 transition-all duration-200 flex flex-col cursor-pointer active:cursor-grabbing"
     >
-      {/* Thumbnail / Preview Area - Square for music, 16:9 for other formats */}
-      <div className={`relative w-full ${item.category === 'music' ? 'aspect-square' : 'aspect-video'} bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden`}>
-        {thumbSrc && !imgError ? (
+      {/* Thumbnail / Preview Area - Uniform aspect-video across all categories to prevent row stretching */}
+      <div className="relative w-full aspect-video bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden">
+        {item.category === 'music' ? (
+          <div className="w-full h-full relative flex items-center justify-center bg-gradient-to-br from-violet-950/40 via-slate-900 to-slate-950">
+            {thumbSrc && !imgError ? (
+              <>
+                {/* Ambient backdrop */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={thumbSrc}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover blur-md opacity-35 scale-125"
+                  aria-hidden="true"
+                />
+                {/* Square Album Cover */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={thumbSrc}
+                  alt={item.name}
+                  onError={handleImageError}
+                  className="relative h-[82%] aspect-square object-cover rounded-lg shadow-lg group-hover:scale-105 transition-transform duration-300 ring-1 ring-white/10"
+                  loading="lazy"
+                />
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center p-4">
+                {getCategoryIcon()}
+              </div>
+            )}
+          </div>
+        ) : thumbSrc && !imgError ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={thumbSrc}
@@ -154,21 +182,12 @@ export function ItemCard({ item, onOpen, onEdit, onMove, readOnly }: ItemCardPro
       {/* Card Body */}
       <div className="p-3.5 flex-1 flex flex-col justify-between">
         <div>
-          {(item.isProtected || coll) && (
-            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-              {item.isProtected && (
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1" title="Protegido con contraseña">
-                  <Lock size={10} />
-                  <span>Bloqueado</span>
-                </span>
-              )}
-
-              {coll && (
-                <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate max-w-[140px]">
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: coll.color || '#8b5cf6' }} />
-                  <span className="truncate">{coll.name}</span>
-                </span>
-              )}
+          {item.isProtected && (
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1" title="Protegido con contraseña">
+                <Lock size={10} />
+                <span>Bloqueado</span>
+              </span>
             </div>
           )}
 

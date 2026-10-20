@@ -43,11 +43,21 @@ export function GooglePhotosView({
   const groupItemsByDate = (): DateGroup[] => {
     const map = new Map<string, InfinityItem[]>();
 
-    // Sort all items newest first
-    const sorted = [...items].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    // Sort all items newest first (prioritizing custom metadata date if set)
+    const sorted = [...items].sort((a, b) => {
+      const timeA = a.metadata?.date ? new Date(a.metadata.date).getTime() : (a.createdAt || 0);
+      const timeB = b.metadata?.date ? new Date(b.metadata.date).getTime() : (b.createdAt || 0);
+      return (isNaN(timeB) ? (b.createdAt || 0) : timeB) - (isNaN(timeA) ? (a.createdAt || 0) : timeA);
+    });
 
     sorted.forEach(item => {
-      const d = new Date(item.createdAt || Date.now());
+      let d: Date;
+      if (item.metadata?.date) {
+        const parsed = new Date(item.metadata.date);
+        d = isNaN(parsed.getTime()) ? new Date(item.createdAt || Date.now()) : parsed;
+      } else {
+        d = new Date(item.createdAt || Date.now());
+      }
       const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       if (!map.has(dateKey)) {
         map.set(dateKey, []);
@@ -207,9 +217,16 @@ export function GooglePhotosView({
 
                   {/* Bottom Hover Gradient with Title & Menu Button */}
                   <div className="absolute inset-x-0 bottom-0 p-2.5 pt-6 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between gap-1 z-10">
-                    <p className="text-[11px] font-medium text-white truncate drop-shadow-sm min-w-0 flex-1">
-                      {item.name}
-                    </p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium text-white truncate drop-shadow-sm">
+                        {item.name}
+                      </p>
+                      {item.metadata?.location && (
+                        <p className="text-[9px] text-slate-300 truncate flex items-center gap-1 drop-shadow-sm">
+                          <span>📍</span> {item.metadata.location}
+                        </p>
+                      )}
+                    </div>
 
                     <div className="relative">
                       <button

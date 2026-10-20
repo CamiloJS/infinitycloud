@@ -18,7 +18,10 @@ import {
   Upload,
   Trash2,
   Loader2,
-  Music
+  Music,
+  MapPin,
+  Calendar,
+  Camera
 } from 'lucide-react';
 
 interface EditItemModalProps {
@@ -44,6 +47,11 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
   const [year, setYear] = useState<string>('');
   const [genre, setGenre] = useState<string>('');
 
+  // Photo specific metadata
+  const [photoDate, setPhotoDate] = useState<string>('');
+  const [photoLocation, setPhotoLocation] = useState<string>('');
+  const [photoCamera, setPhotoCamera] = useState<string>('');
+
   // Password security
   const [enablePassword, setEnablePassword] = useState<boolean>(false);
   const [newPassword, setNewPassword] = useState<string>('');
@@ -66,6 +74,13 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
       setAlbum(item.metadata?.album || '');
       setYear(item.metadata?.year || '');
       setGenre(item.metadata?.genre || '');
+
+      // Load photo metadata
+      const d = item.metadata?.date || (item.createdAt ? new Date(item.createdAt).toISOString().split('T')[0] : '');
+      setPhotoDate(d);
+      setPhotoLocation(item.metadata?.location || '');
+      setPhotoCamera(item.metadata?.camera || '');
+
       setHasExistingPassword(Boolean(item.isProtected && item.passwordHash));
       setEnablePassword(Boolean(item.isProtected && item.passwordHash));
       setNewPassword('');
@@ -132,7 +147,10 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
           artist: artist.trim() || undefined,
           album: album.trim() || undefined,
           year: year.trim() || undefined,
-          genre: genre.trim() || undefined
+          genre: genre.trim() || undefined,
+          date: photoDate.trim() || undefined,
+          location: photoLocation.trim() || undefined,
+          camera: photoCamera.trim() || undefined
         }
       };
 
@@ -163,7 +181,7 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[88vh] max-h-[720px]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
           <div className="flex items-center gap-2.5">
@@ -239,56 +257,104 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
         </div>
 
         {/* Tab Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
-          {activeTab === 'info' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-                  Nombre del archivo *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm text-slate-800 dark:text-white outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {activeTab === 'info' && (
+              <div className="space-y-4 animate-in fade-in duration-150">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-                    Categoría
+                    Nombre del archivo *
                   </label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as CategoryType)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-800 dark:text-white outline-none focus:border-blue-500"
-                  >
-                    <option value="photos">Fotos</option>
-                    <option value="videos">Videos</option>
-                    <option value="music">Música</option>
-                    <option value="documents">Documentos</option>
-                    <option value="others">Otros</option>
-                  </select>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                  />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-                    Colección
-                  </label>
-                  <select
-                    value={collectionId}
-                    onChange={(e) => setCollectionId(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-800 dark:text-white outline-none focus:border-blue-500"
-                  >
-                    <option value="">Sin colección</option>
-                    {collections.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+                      Categoría
+                    </label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value as CategoryType)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                    >
+                      <option value="photos">Fotos</option>
+                      <option value="videos">Videos</option>
+                      <option value="music">Música</option>
+                      <option value="documents">Documentos</option>
+                      <option value="others">Otros</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+                      Carpeta
+                    </label>
+                    <select
+                      value={collectionId}
+                      onChange={(e) => setCollectionId(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-800 dark:text-white outline-none focus:border-blue-500"
+                    >
+                      <option value="">Sin carpeta</option>
+                      {collections.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </div>
+
+                {/* Photo Specific Metadata */}
+                {category === 'photos' && (
+                  <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 space-y-3">
+                    <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold text-xs">
+                      <Camera size={15} />
+                      <span>Metadatos de la Fotografía</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+                          <Calendar size={12} /> Fecha
+                        </label>
+                        <input
+                          type="date"
+                          value={photoDate}
+                          onChange={(e) => setPhotoDate(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+                          <MapPin size={12} /> Ubicación / Lugar
+                        </label>
+                        <input
+                          type="text"
+                          value={photoLocation}
+                          onChange={(e) => setPhotoLocation(e.target.value)}
+                          placeholder="ej. Medellín, París"
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1">
+                          <Camera size={12} /> Cámara / Dispositivo
+                        </label>
+                        <input
+                          type="text"
+                          value={photoCamera}
+                          onChange={(e) => setPhotoCamera(e.target.value)}
+                          placeholder="ej. iPhone 15, Sony A7"
+                          className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
               {/* Music Specific Metadata */}
               {category === 'music' && (
@@ -565,13 +631,14 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
               </div>
             </div>
           )}
+          </div>
 
-          {/* Footer buttons */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+          {/* Pinned Footer buttons */}
+          <div className="shrink-0 px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-sm flex items-center justify-end gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors"
             >
               Cancelar
             </button>

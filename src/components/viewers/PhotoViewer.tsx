@@ -97,9 +97,6 @@ export function PhotoViewer({ item, itemsList, onClose, onSelectNext, onSelectPr
       <div className="absolute top-0 inset-x-0 h-16 flex items-center justify-between px-6 bg-gradient-to-b from-black/80 to-transparent z-10">
         <div className="flex items-center gap-3 text-white truncate max-w-lg">
           <span className="font-medium text-sm md:text-base truncate">{item.name}</span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-white/20 uppercase tracking-wider font-semibold">
-            {item.provider}
-          </span>
         </div>
 
         {/* Toolbar Controls */}
