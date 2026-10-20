@@ -21,8 +21,10 @@ import {
   Music,
   MapPin,
   Calendar,
-  Camera
+  Camera,
+  Mic2
 } from 'lucide-react';
+import { parseLRC } from '@/lib/utils/lyrics';
 
 interface EditItemModalProps {
   item: InfinityItem | null;
@@ -33,7 +35,7 @@ interface EditItemModalProps {
 export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
   const { editItem, collections } = useItems();
 
-  const [activeTab, setActiveTab] = useState<'info' | 'thumbnail' | 'security' | 'metadata'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'thumbnail' | 'security' | 'metadata' | 'lyrics'>('info');
   const [name, setName] = useState<string>('');
   const [category, setCategory] = useState<CategoryType>('others');
   const [collectionId, setCollectionId] = useState<string>('');
@@ -46,6 +48,8 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
   const [album, setAlbum] = useState<string>('');
   const [year, setYear] = useState<string>('');
   const [genre, setGenre] = useState<string>('');
+  const [lyrics, setLyrics] = useState<string>('');
+  const [lyricsError, setLyricsError] = useState<string | null>(null);
 
   // Photo specific metadata
   const [photoDate, setPhotoDate] = useState<string>('');
@@ -74,6 +78,8 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
       setAlbum(item.metadata?.album || '');
       setYear(item.metadata?.year || '');
       setGenre(item.metadata?.genre || '');
+      setLyrics(item.metadata?.lyrics || '');
+      setLyricsError(null);
 
       // Load photo metadata
       const d = item.metadata?.date || (item.createdAt ? new Date(item.createdAt).toISOString().split('T')[0] : '');
@@ -130,6 +136,27 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
     }
   };
 
+  const handleLrcUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLyricsError(null);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (!content || !content.trim()) {
+        setLyricsError('El archivo seleccionado está vacío.');
+        return;
+      }
+      setLyrics(content);
+    };
+    reader.onerror = () => {
+      setLyricsError('Error al leer el archivo.');
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -148,6 +175,7 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
           album: album.trim() || undefined,
           year: year.trim() || undefined,
           genre: genre.trim() || undefined,
+          lyrics: lyrics.trim() || undefined,
           date: photoDate.trim() || undefined,
           location: photoLocation.trim() || undefined,
           camera: photoCamera.trim() || undefined
@@ -254,6 +282,22 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
             <Sliders size={14} />
             <span>Notas</span>
           </button>
+
+          {category === 'music' && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('lyrics')}
+              className={`pb-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
+                activeTab === 'lyrics'
+                  ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 font-semibold'
+                  : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+              }`}
+            >
+              <Mic2 size={14} />
+              <span>Letras (.lrc)</span>
+              {lyrics && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+            </button>
+          )}
         </div>
 
         {/* Tab Body */}
@@ -629,6 +673,85 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500"
                 />
               </div>
+            </div>
+          )}
+
+          {activeTab === 'lyrics' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs flex items-start gap-3">
+                <Mic2 size={18} className="shrink-0 mt-0.5 text-emerald-500" />
+                <div>
+                  <h4 className="font-semibold text-sm mb-1">Letra sincronizada en vivo (Formato LRC)</h4>
+                  <p className="text-[11px] leading-relaxed">
+                    Sube un archivo <code className="px-1 py-0.5 rounded bg-emerald-500/20 font-mono">.lrc</code> o pega los versos con marcas de tiempo <code className="px-1 py-0.5 rounded bg-emerald-500/20 font-mono">[mm:ss.xx]</code> para que se sincronicen en tiempo real con la canción.
+                  </p>
+                </div>
+              </div>
+
+              {lyricsError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs">
+                  {lyricsError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <label className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2 cursor-pointer transition-colors shadow-sm">
+                  <Upload size={14} className="text-emerald-500" />
+                  <span>Cargar archivo .lrc / .txt</span>
+                  <input
+                    type="file"
+                    accept=".lrc,.txt"
+                    onChange={handleLrcUpload}
+                    className="hidden"
+                  />
+                </label>
+
+                {lyrics && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400">
+                      {parseLRC(lyrics).length} versos detectados
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setLyrics('')}
+                      className="text-xs text-rose-500 hover:text-rose-600 font-medium transition-colors ml-2"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Contenido de letra LRC
+                </label>
+                <textarea
+                  rows={8}
+                  value={lyrics}
+                  onChange={(e) => setLyrics(e.target.value)}
+                  placeholder="[00:12.50] Primera línea de la canción...&#10;[00:16.80] Segunda línea sincronizada...&#10;[00:21.00] Coro..."
+                  className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono text-slate-800 dark:text-white outline-none focus:border-emerald-500 leading-relaxed shadow-inner"
+                />
+              </div>
+
+              {lyrics && parseLRC(lyrics).length > 0 && (
+                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block mb-2">
+                    Vista previa de sincronización (primeros 3 versos)
+                  </span>
+                  <div className="space-y-1 text-xs">
+                    {parseLRC(lyrics).slice(0, 3).map((l, i) => (
+                      <div key={i} className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                        <span className="text-[10px] font-mono text-emerald-500 bg-emerald-500/10 px-1 rounded">
+                          {Math.floor(l.time / 60)}:{(Math.floor(l.time % 60)).toString().padStart(2, '0')}
+                        </span>
+                        <span>{l.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           </div>

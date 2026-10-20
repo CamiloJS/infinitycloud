@@ -26,7 +26,8 @@ import {
   ArrowLeft,
   Search,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Mic2
 } from 'lucide-react';
 
 export interface CustomPlaylist {
@@ -572,6 +573,12 @@ export function SpotifyMusicView({ items, onEdit }: SpotifyMusicViewProps) {
                           <FolderPlus size={14} />
                         </button>
 
+                        {song.metadata?.lyrics && (
+                          <span title="Letra sincronizada disponible" className="text-emerald-500 shrink-0">
+                            <Mic2 size={13} />
+                          </span>
+                        )}
+
                         <span className="text-slate-400 font-mono text-[11px] w-12 text-right">
                           {formatDuration(song)}
                         </span>
@@ -592,8 +599,18 @@ export function SpotifyMusicView({ items, onEdit }: SpotifyMusicViewProps) {
                           {isMenuOpen && (
                             <div
                               onClick={(e) => e.stopPropagation()}
-                              className="absolute right-0 bottom-6 z-30 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl py-1 text-xs animate-in fade-in"
+                              className="absolute right-0 bottom-6 z-30 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl py-1 text-xs animate-in fade-in"
                             >
+                              <button
+                                onClick={() => {
+                                  setActiveMenuTrackId(null);
+                                  onEdit(song);
+                                }}
+                                className="w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800"
+                              >
+                                <Mic2 size={13} className="text-emerald-500" />
+                                <span>{song.metadata?.lyrics ? 'Ver / Editar letra' : 'Añadir letra (.lrc)'}</span>
+                              </button>
                               <button
                                 onClick={() => {
                                   setActiveMenuTrackId(null);

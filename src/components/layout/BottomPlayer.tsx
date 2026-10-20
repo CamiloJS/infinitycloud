@@ -15,8 +15,10 @@ import {
   ListMusic, 
   X, 
   Music,
-  ExternalLink
+  ExternalLink,
+  Mic2
 } from 'lucide-react';
+import { LiveLyricsModal } from '@/components/player/LiveLyricsModal';
 
 function formatTime(seconds: number): string {
   if (isNaN(seconds) || seconds < 0) return '0:00';
@@ -54,6 +56,7 @@ export function BottomPlayer() {
   } = usePlayer();
 
   const [showQueue, setShowQueue] = useState<boolean>(false);
+  const [showLyrics, setShowLyrics] = useState<boolean>(false);
 
   if (!currentTrack) return null;
 
@@ -270,6 +273,24 @@ export function BottomPlayer() {
               </div>
             )}
 
+            {/* Live Lyrics Button */}
+            <button
+              onClick={() => setShowLyrics(prev => !prev)}
+              className={`p-2 rounded-lg transition-all relative ${
+                showLyrics
+                  ? 'bg-emerald-500 text-slate-950 font-bold shadow-md shadow-emerald-500/20'
+                  : currentTrack.metadata?.lyrics
+                  ? 'text-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10'
+                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title={currentTrack.metadata?.lyrics ? "Letras sincronizadas disponibles" : "Ver / Añadir letra"}
+            >
+              <Mic2 size={18} />
+              {currentTrack.metadata?.lyrics && !showLyrics && (
+                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+              )}
+            </button>
+
             <button
               onClick={() => setShowQueue(prev => !prev)}
               className={`p-2 rounded-lg transition-colors ${
@@ -302,6 +323,12 @@ export function BottomPlayer() {
           </div>
         </div>
       </div>
+
+      {/* Live Synchronized Lyrics Fullscreen / Modal */}
+      <LiveLyricsModal 
+        isOpen={showLyrics} 
+        onClose={() => setShowLyrics(false)} 
+      />
     </>
   );
 }
