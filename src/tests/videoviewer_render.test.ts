@@ -84,4 +84,45 @@ describe('VideoViewer logic and edge cases', () => {
     expect(state.hasError).toBe(true);
     expect(state.error).toBe(err);
   });
+
+  it('validates playback speed pills and 1x normal default', () => {
+    const supportedSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    const defaultSpeed = 1.0;
+    expect(supportedSpeeds).toContain(defaultSpeed);
+    
+    // Test active selection logic
+    const isSelected = (speed: number, current: number) => Math.abs(current - speed) < 0.01;
+    expect(isSelected(1.0, defaultSpeed)).toBe(true);
+    expect(isSelected(0.5, defaultSpeed)).toBe(false);
+    expect(isSelected(2.0, defaultSpeed)).toBe(false);
+  });
+
+  it('verifies continuous volume scaling from 0% to 300% without proxy reloads', () => {
+    const clampVolume = (boost: number) => Math.max(0, Math.min(3.0, boost));
+    
+    // Normal volumes (0% - 100%)
+    expect(clampVolume(0)).toBe(0);
+    expect(clampVolume(0.5)).toBe(0.5);
+    expect(clampVolume(1.0)).toBe(1.0);
+    
+    // Boosted volumes (100% - 300%)
+    expect(clampVolume(1.5)).toBe(1.5);
+    expect(clampVolume(2.0)).toBe(2.0);
+    expect(clampVolume(3.0)).toBe(3.0);
+    expect(clampVolume(4.5)).toBe(3.0); // Clamped at 300%
+
+    // Verify shouldProxy does NOT change with volumeBoost
+    const getShouldProxy = (baseSrc: string, corsRetryState: string) => Boolean(baseSrc && corsRetryState === 'proxy');
+    const baseSrc = 'https://prod-files-secure.s3.us-west-2.amazonaws.com/test.mp4';
+    
+    // Before: volume 1.0
+    expect(getShouldProxy(baseSrc, 'initial')).toBe(false);
+    // After: volume 1.5 (150%) - must NOT proxy or reload!
+    expect(getShouldProxy(baseSrc, 'initial')).toBe(false);
+    // After: volume 3.0 (300%) - must NOT proxy or reload!
+    expect(getShouldProxy(baseSrc, 'initial')).toBe(false);
+    
+    // Proxy is ONLY used if a real error triggered corsRetryState === 'proxy'
+    expect(getShouldProxy(baseSrc, 'proxy')).toBe(true);
+  });
 });

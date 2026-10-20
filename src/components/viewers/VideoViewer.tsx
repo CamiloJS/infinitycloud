@@ -273,13 +273,28 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
 
   // Web Audio Booster for HTML5 Video
   const applyVolumeBoost = async (boostMultiplier: number) => {
-    setVolumeBoost(boostMultiplier);
+    const clampedMultiplier = Math.max(0, Math.min(3.0, boostMultiplier));
+    setVolumeBoost(clampedMultiplier);
     const video = videoRef.current;
     if (!video) return;
 
-    if (video.muted) {
+    if (video.muted && clampedMultiplier > 0) {
       video.muted = false;
     }
+
+    if (clampedMultiplier <= 1.0) {
+      // Direct native volume control - completely seamless, no Web Audio needed
+      video.volume = clampedMultiplier;
+      if (gainNodeRef.current && audioCtxRef.current) {
+        try {
+          gainNodeRef.current.gain.cancelScheduledValues(audioCtxRef.current.currentTime);
+          gainNodeRef.current.gain.setValueAtTime(1.0, audioCtxRef.current.currentTime);
+        } catch {}
+      }
+      return;
+    }
+
+    // Boost beyond 100% requires video.volume at 1.0 and Web Audio gain
     video.volume = 1.0;
 
     try {
@@ -313,7 +328,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
 
       if (gainNodeRef.current) {
         gainNodeRef.current.gain.cancelScheduledValues(ctx.currentTime);
-        gainNodeRef.current.gain.setValueAtTime(boostMultiplier, ctx.currentTime);
+        gainNodeRef.current.gain.setValueAtTime(clampedMultiplier, ctx.currentTime);
       }
     } catch (err) {
       console.warn('Audio boost error:', err);
@@ -516,10 +531,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                           (item.provider === 'notion' ? (notionDirectUrl || '') : (directUrl || ''));
 
   const shouldProxy = Boolean(
-    baseSrc && (
-      corsRetryState === 'proxy' || 
-      (volumeBoost > 1.0 && (baseSrc.includes('amazonaws.com') || baseSrc.includes('notion')))
-    )
+    baseSrc && corsRetryState === 'proxy'
   );
 
   const effectiveVideoSrc: string = shouldProxy
@@ -563,11 +575,13 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     }
   };
 
+  const showPlayerControls = isDirectVideo && !embedFailed && (!isNotion || Boolean(extractedVideo) || hasS3Video);
+
   return (
     <div 
       ref={containerRef}
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md transition-all duration-200 select-none ${
-        isMaximized ? 'p-0 w-screen h-screen' : 'p-3 sm:p-6'
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black transition-all duration-200 select-none ${
+        isMaximized ? 'p-0 w-screen h-screen' : 'p-2 sm:p-6 bg-black/95 backdrop-blur-md'
       }`}
     >
       <div 
@@ -577,48 +591,247 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
             : 'w-full max-w-5xl rounded-3xl border border-slate-800'
         }`}
       >
-        {/* Minimalist Top Icons - ZERO text, strictly above video frame */}
-        <div className="w-full flex items-center justify-end px-3 py-1.5 bg-slate-950 shrink-0 gap-2">
-          {canDownloadItem(item) && (
-            <button
-              onClick={handleDownload}
-              disabled={isDownloading}
-              className="p-2 rounded-xl bg-slate-900/90 hover:bg-blue-600/20 text-slate-300 hover:text-blue-400 transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center disabled:opacity-50"
-              title="Descargar archivo"
-              aria-label="Descargar archivo"
-            >
-              {isDownloading ? <Loader2 size={16} className="animate-spin text-blue-400" /> : <Download size={16} />}
-            </button>
+        {/* Unified Top Controls & Header Bar - All controls positioned at the top */}
+        <div className="w-full bg-slate-950/95 border-b border-slate-800/80 px-3 py-2 shrink-0 z-20 flex flex-wrap items-center justify-between gap-2">
+          {showPlayerControls ? (
+            <div className="flex items-center flex-wrap gap-2 flex-1 min-w-0">
+              {/* Volume Slider & Boost Group (0% - 300%) */}
+              <div className="flex items-center gap-1.5 bg-slate-900/90 px-2 py-1 rounded-xl border border-slate-800">
+                <Volume2 
+                  size={15} 
+                  className={volumeBoost > 1.0 ? 'text-amber-400 shrink-0' : 'text-blue-400 shrink-0'} 
+                />
+                <input
+                  type="range"
+                  min="0"
+                  max="300"
+                  step="5"
+                  value={Math.round(volumeBoost * 100)}
+                  onChange={(e) => applyVolumeBoost(Number(e.target.value) / 100)}
+                  className="w-16 sm:w-24 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  title={`Volumen: ${Math.round(volumeBoost * 100)}%`}
+                />
+                <span 
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 min-w-[34px] text-center ${
+                    volumeBoost > 1.0 
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' 
+                      : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  {Math.round(volumeBoost * 100)}%
+                </span>
+                
+                {/* Quick Volume Presets */}
+                <div className="hidden sm:flex items-center bg-slate-800/80 p-0.5 rounded-lg border border-slate-700/50">
+                  {[
+                    { mult: 1.0, label: '100%' },
+                    { mult: 1.5, label: '150%' },
+                    { mult: 2.0, label: '2x' },
+                    { mult: 3.0, label: '3x' }
+                  ].map(({ mult, label }) => {
+                    const isActive = Math.abs(volumeBoost - mult) < 0.05;
+                    return (
+                      <button
+                        key={mult}
+                        type="button"
+                        onClick={() => applyVolumeBoost(mult)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
+                          isActive
+                            ? mult > 1.0 
+                              ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm'
+                              : 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                        title={`Ajustar a ${label}`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Playback Speed Buttons Group */}
+              <div className="flex items-center gap-1 bg-slate-900/90 px-2 py-1 rounded-xl border border-slate-800">
+                <Gauge size={13} className="text-blue-400 shrink-0" />
+                <div className="flex items-center bg-slate-800/80 p-0.5 rounded-lg border border-slate-700/50">
+                  {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((speed) => {
+                    const isSelected = Math.abs(playbackSpeed - speed) < 0.01;
+                    return (
+                      <button
+                        key={speed}
+                        type="button"
+                        onClick={() => changePlaybackSpeed(speed)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all ${
+                          isSelected
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                        title={`Velocidad ${speed === 1.0 ? 'normal (1x)' : `${speed}x`}`}
+                      >
+                        {speed === 1.0 ? '1x' : `${speed}x`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Aux Controls: Loop, Aspect Ratio, PiP, Thumbnails */}
+              <div className="flex items-center gap-1.5">
+                {/* Loop */}
+                <button
+                  type="button"
+                  onClick={toggleLoop}
+                  className={`p-1.5 rounded-xl border transition-all ${
+                    isLooping 
+                      ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' 
+                      : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                  title={isLooping ? 'Repetición activada' : 'Repetir video'}
+                >
+                  <Repeat size={13} />
+                </button>
+
+                {/* Aspect Ratio Fit */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAspectMode(prev => {
+                      if (prev === 'contain') return 'zoom';
+                      if (prev === 'zoom') return 'stretch';
+                      return 'contain';
+                    });
+                  }}
+                  className={`px-2 py-1 rounded-xl border text-[10px] font-medium flex items-center gap-1 transition-all ${
+                    aspectMode !== 'contain' 
+                      ? 'bg-blue-600/30 border-blue-500/50 text-blue-300 shadow-sm' 
+                      : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                  title="Ajustar aspecto: 16:9 -> Zoom (Sin franjas) -> Estirar"
+                >
+                  <Ratio size={12} className={aspectMode !== 'contain' ? 'text-blue-400' : ''} />
+                  <span className="hidden sm:inline">
+                    {aspectMode === 'zoom' 
+                      ? 'Zoom' 
+                      : aspectMode === 'stretch' 
+                        ? 'Estirar' 
+                        : '16:9'}
+                  </span>
+                </button>
+
+                {/* Snapshot Frame as Thumbnail (only when editable) */}
+                {!readOnly && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={captureFrameAsThumbnail}
+                      disabled={isCapturingSnapshot}
+                      className={`px-2 py-1 rounded-xl border text-[10px] font-medium flex items-center gap-1 transition-all ${
+                        snapshotSuccess
+                          ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                          : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:text-white disabled:opacity-60'
+                      }`}
+                      title="Capturar fotograma actual y usarlo como miniatura del video"
+                    >
+                      {isCapturingSnapshot ? (
+                        <Loader2 size={12} className="animate-spin text-blue-400" />
+                      ) : snapshotSuccess ? (
+                        <Check size={12} />
+                      ) : (
+                        <Camera size={12} />
+                      )}
+                      <span className="hidden md:inline">{snapshotMessage || (snapshotSuccess ? '¡Guardada!' : 'Miniatura')}</span>
+                    </button>
+
+                    <label
+                      className={`px-2 py-1 rounded-xl border text-[10px] font-medium flex items-center gap-1 transition-all cursor-pointer ${
+                        uploadThumbSuccess
+                          ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+                          : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:text-white'
+                      }`}
+                      title="Subir una imagen desde tu dispositivo como miniatura 16:9"
+                    >
+                      {isUploadingThumb ? (
+                        <Loader2 size={12} className="animate-spin text-blue-400" />
+                      ) : uploadThumbSuccess ? (
+                        <Check size={12} />
+                      ) : (
+                        <Upload size={12} />
+                      )}
+                      <span className="hidden md:inline">{isUploadingThumb ? 'Procesando...' : uploadThumbSuccess ? '¡Guardada!' : 'Subir'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleUploadCustomThumbnail}
+                        disabled={isUploadingThumb}
+                        className="hidden"
+                      />
+                    </label>
+                  </>
+                )}
+
+                {/* Picture in Picture */}
+                <button
+                  type="button"
+                  onClick={togglePiP}
+                  className="p-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-slate-400 hover:text-white transition-all"
+                  title="Ventana flotante (Picture-in-Picture)"
+                >
+                  <PictureInPicture size={13} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 min-w-0" />
           )}
 
-          {isNotion && (
+          {/* Right Action Icons: Download, Notion Link, Maximize, Close */}
+          <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+            {canDownloadItem(item) && (
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={isDownloading}
+                className="p-2 rounded-xl bg-slate-900/90 hover:bg-blue-600/20 text-slate-300 hover:text-blue-400 transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center disabled:opacity-50"
+                title="Descargar archivo"
+                aria-label="Descargar archivo"
+              >
+                {isDownloading ? <Loader2 size={15} className="animate-spin text-blue-400" /> : <Download size={15} />}
+              </button>
+            )}
+
+            {isNotion && (
+              <button
+                type="button"
+                onClick={() => setShowLinkVideoModal(true)}
+                className="p-2 rounded-xl bg-slate-900/90 hover:bg-blue-600/20 text-slate-300 hover:text-blue-400 transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center"
+                title="Elegir o vincular video de Notion"
+                aria-label="Elegir o vincular video de Notion"
+              >
+                <Film size={15} />
+              </button>
+            )}
+
             <button
-              onClick={() => setShowLinkVideoModal(true)}
-              className="p-2 rounded-xl bg-slate-900/90 hover:bg-blue-600/20 text-slate-300 hover:text-blue-400 transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center"
-              title="Elegir o vincular video de Notion"
-              aria-label="Elegir o vincular video de Notion"
+              type="button"
+              onClick={toggleMaximize}
+              className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center"
+              title={isMaximized ? 'Restaurar pantalla' : 'Maximizar pantalla completa'}
+              aria-label={isMaximized ? 'Restaurar pantalla' : 'Maximizar pantalla completa'}
             >
-              <Film size={16} />
+              {isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
-          )}
 
-          <button
-            onClick={toggleMaximize}
-            className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center"
-            title={isMaximized ? 'Restaurar' : 'Maximizar'}
-            aria-label={isMaximized ? 'Restaurar' : 'Maximizar'}
-          >
-            {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </button>
-
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl bg-slate-900/90 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center"
-            title="Cerrar"
-            aria-label="Cerrar"
-          >
-            <X size={18} />
-          </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-xl bg-slate-900/90 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 transition-all active:scale-95 border border-slate-800/80 flex items-center justify-center"
+              title="Cerrar reproductor"
+              aria-label="Cerrar reproductor"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Floating Modal to choose/link Notion video at any time */}
@@ -864,7 +1077,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                 autoPlay
                 playsInline
                 loop={isLooping}
-                crossOrigin={(volumeBoost > 1.0 || corsRetryState === 'proxy') ? 'anonymous' : undefined}
+                crossOrigin={corsRetryState === 'proxy' ? 'anonymous' : undefined}
                 onError={handleVideoError}
                 onLoadedMetadata={() => {
                   if (videoRef.current) {
@@ -884,8 +1097,11 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
                   }
                 }}
                 onRateChange={() => {
-                  if (videoRef.current && videoRef.current.playbackRate !== playbackSpeed) {
-                    videoRef.current.playbackRate = playbackSpeed;
+                  if (videoRef.current) {
+                    const currentRate = videoRef.current.playbackRate;
+                    if (Math.abs(currentRate - playbackSpeed) > 0.01) {
+                      setPlaybackSpeed(currentRate);
+                    }
                   }
                 }}
                 onEnded={() => {
@@ -917,183 +1133,6 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
             </div>
           )}
         </div>
-
-        {/* Enhanced Player Controls Bar (Features & Audio Booster) */}
-        {isDirectVideo && !embedFailed && (!isNotion || Boolean(extractedVideo) || hasS3Video) && (
-          <div className="w-full px-4 py-2.5 bg-slate-900 border-t border-slate-800 flex items-center justify-between flex-wrap gap-2 text-xs text-slate-300">
-            {/* Volume Booster Controls */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 text-slate-400 font-semibold text-[11px] uppercase tracking-wider">
-                <Volume2 size={15} className="text-blue-400" />
-                <span>Volumen:</span>
-              </div>
-              <div className="flex items-center bg-slate-800 p-0.5 rounded-xl border border-slate-700/60">
-                <button
-                  onClick={() => applyVolumeBoost(1.0)}
-                  className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-                    volumeBoost === 1.0 
-                      ? 'bg-blue-600 text-white shadow' 
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  100%
-                </button>
-                <button
-                  onClick={() => applyVolumeBoost(1.5)}
-                  className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-                    volumeBoost === 1.5 
-                      ? 'bg-blue-600 text-white shadow' 
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  150%
-                </button>
-                <button
-                  onClick={() => applyVolumeBoost(2.0)}
-                  className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-0.5 transition-all ${
-                    volumeBoost === 2.0 
-                      ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow' 
-                      : 'text-amber-400 hover:text-amber-300'
-                  }`}
-                  title="Duplicar volumen del video (200%)"
-                >
-                  <Zap size={11} />
-                  <span>2x</span>
-                </button>
-                <button
-                  onClick={() => applyVolumeBoost(3.0)}
-                  className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-0.5 transition-all ${
-                    volumeBoost === 3.0 
-                      ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white shadow' 
-                      : 'text-rose-400 hover:text-rose-300'
-                  }`}
-                  title="Triplicar volumen del video (300%)"
-                >
-                  <Zap size={11} />
-                  <span>3x</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Playback Speed, Loop, Fit, Screenshot & PiP */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Speed */}
-              <div className="flex items-center gap-1 bg-slate-800 px-2 py-1 rounded-xl border border-slate-700/60">
-                <Gauge size={13} className="text-slate-400" />
-                <select
-                  value={playbackSpeed}
-                  onChange={(e) => changePlaybackSpeed(parseFloat(e.target.value))}
-                  className="bg-transparent text-[11px] font-semibold text-slate-200 outline-none cursor-pointer"
-                >
-                  <option value="0.5" className="bg-slate-900">0.5x</option>
-                  <option value="0.75" className="bg-slate-900">0.75x</option>
-                  <option value="1.0" className="bg-slate-900">1x (Normal)</option>
-                  <option value="1.25" className="bg-slate-900">1.25x</option>
-                  <option value="1.5" className="bg-slate-900">1.5x</option>
-                  <option value="2.0" className="bg-slate-900">2x</option>
-                </select>
-              </div>
-
-              {/* Loop */}
-              <button
-                onClick={toggleLoop}
-                className={`p-1.5 rounded-xl border transition-all ${
-                  isLooping 
-                    ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' 
-                    : 'bg-slate-800 border-slate-700/60 text-slate-400 hover:text-white'
-                }`}
-                title={isLooping ? 'Repetición activada' : 'Repetir video'}
-              >
-                <Repeat size={14} />
-              </button>
-
-              {/* Aspect Ratio Fit */}
-              <button
-                onClick={() => {
-                  setAspectMode(prev => {
-                    if (prev === 'contain') return 'zoom';
-                    if (prev === 'zoom') return 'stretch';
-                    return 'contain';
-                  });
-                }}
-                className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1.5 transition-all ${
-                  aspectMode !== 'contain' 
-                    ? 'bg-blue-600/30 border-blue-500/50 text-blue-300 shadow-sm' 
-                    : 'bg-slate-800 border-slate-700/60 text-slate-400 hover:text-white'
-                }`}
-                title="Ajustar aspecto: 16:9 (normal) -> Zoom (sin franjas negras) -> Estirar"
-              >
-                <Ratio size={13} className={aspectMode !== 'contain' ? 'text-blue-400' : ''} />
-                <span>
-                  {aspectMode === 'zoom' 
-                    ? 'Zoom (Sin franjas)' 
-                    : aspectMode === 'stretch' 
-                      ? 'Estirar' 
-                      : '16:9'}
-                </span>
-              </button>
-
-              {/* Snapshot Frame as Thumbnail (only when editable) */}
-              {!readOnly && (
-                <>
-                  <button
-                    onClick={captureFrameAsThumbnail}
-                    disabled={isCapturingSnapshot}
-                    className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1.5 transition-all ${
-                      snapshotSuccess
-                        ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                        : 'bg-slate-800 border-slate-700/60 text-slate-300 hover:text-white disabled:opacity-60'
-                    }`}
-                    title="Capturar fotograma actual y usarlo como miniatura del video"
-                  >
-                    {isCapturingSnapshot ? (
-                      <Loader2 size={13} className="animate-spin text-blue-400" />
-                    ) : snapshotSuccess ? (
-                      <Check size={13} />
-                    ) : (
-                      <Camera size={13} />
-                    )}
-                    <span>{snapshotMessage || (snapshotSuccess ? '¡Guardada!' : 'Capturar miniatura')}</span>
-                  </button>
-
-                  <label
-                    className={`px-2.5 py-1 rounded-xl border text-[11px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
-                      uploadThumbSuccess
-                        ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
-                        : 'bg-slate-800 border-slate-700/60 text-slate-300 hover:text-white'
-                    }`}
-                    title="Subir una imagen desde tu dispositivo como miniatura 16:9"
-                  >
-                    {isUploadingThumb ? (
-                      <Loader2 size={13} className="animate-spin text-blue-400" />
-                    ) : uploadThumbSuccess ? (
-                      <Check size={13} />
-                    ) : (
-                      <Upload size={13} />
-                    )}
-                    <span>{isUploadingThumb ? 'Procesando...' : uploadThumbSuccess ? '¡Guardada!' : 'Subir miniatura'}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleUploadCustomThumbnail}
-                      disabled={isUploadingThumb}
-                      className="hidden"
-                    />
-                  </label>
-                </>
-              )}
-
-              {/* Picture in Picture */}
-              <button
-                onClick={togglePiP}
-                className="p-1.5 rounded-xl bg-slate-800 border border-slate-700/60 text-slate-400 hover:text-white transition-all"
-                title="Ventana flotante (Picture-in-Picture)"
-              >
-                <PictureInPicture size={14} />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
