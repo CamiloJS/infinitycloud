@@ -164,12 +164,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
         const isAudioFile = (url?: string) => {
           if (!url) return false;
-          const l = url.toLowerCase();
-          return l.endsWith('.mp3') || l.endsWith('.wav') || l.endsWith('.ogg') || l.endsWith('.m4a') || l.endsWith('.flac') || l.includes('prod-files-secure.s3') || l.includes('file.notion.so');
+          const clean = url.trim();
+          const l = clean.toLowerCase();
+          const AUDIO_EXT = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
+          return AUDIO_EXT.test(clean) || AUDIO_EXT.test(l) || l.includes('prod-files-secure.s3') || l.includes('file.notion.so') || l.includes('amazonaws.com') || l.includes('/audio');
         };
 
+        const targetStreamUrl = item.metadata?.s3Url || item.url;
         // If Notion item lacks direct s3 audio stream, extract on-demand from page
-        if (isNotion && (!item.metadata?.s3Url || !isAudioFile(item.metadata.s3Url))) {
+        if (isNotion && !isAudioFile(targetStreamUrl)) {
           fetch('/api/notion/extract-page', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

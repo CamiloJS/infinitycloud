@@ -82,16 +82,9 @@ export class NotionAdapter implements ProviderAdapter {
         pathname.endsWith('.ogv')
       ) {
         isVideo = true;
-      } else if (
-        pathname.endsWith('.mp3') ||
-        pathname.endsWith('.wav') ||
-        pathname.endsWith('.ogg') ||
-        pathname.endsWith('.m4a') ||
-        pathname.endsWith('.aac') ||
-        pathname.endsWith('.flac') ||
-        pathname.endsWith('.opus') ||
-        pathname.endsWith('.weba')
-      ) {
+      }
+      const AUDIO_EXT_REGEX = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
+      if (AUDIO_EXT_REGEX.test(pathname) || AUDIO_EXT_REGEX.test(urlString)) {
         isAudio = true;
       }
     } catch {
@@ -108,7 +101,26 @@ export class NotionAdapter implements ProviderAdapter {
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.foundVideo && data.video) {
+          // If URL itself is audio, or if page has audio and no video
+          if (data.foundAudio && data.audio && (isAudio || !data.foundVideo)) {
+            return {
+              name: data.audio.title || title,
+              provider: 'notion',
+              category: 'music',
+              thumbnailUrl: data.audio.coverUrl || undefined,
+              metadata: {
+                notionId: id || undefined,
+                notionPageId: data.audio.notionPageId,
+                notionBlockId: data.audio.notionBlockId,
+                originalUrl: urlString,
+                extractedFromPage: true,
+                isNotionAudio: true,
+                s3Url: data.audio.url,
+                expiryTime: data.audio.expiryTime,
+                sourceType: data.audio.sourceType
+              }
+            };
+          } else if (data.foundVideo && data.video) {
             return {
               name: data.video.title || title,
               provider: 'notion',

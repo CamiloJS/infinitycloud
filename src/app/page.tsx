@@ -134,8 +134,20 @@ export default function HomePage() {
       setActivePhoto(item);
       return;
     }
-    if (item.category === 'music' || item.metadata?.isNotionAudio) {
-      playTrack(item, filteredItems.filter(i => i.category === 'music' || i.metadata?.isNotionAudio));
+    const AUDIO_REGEX = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
+    const isAudioItem = item.category === 'music' || 
+      item.metadata?.isNotionAudio || 
+      AUDIO_REGEX.test(item.url) || 
+      AUDIO_REGEX.test(item.name) ||
+      AUDIO_REGEX.test(item.metadata?.s3Url || '');
+
+    if (isAudioItem) {
+      playTrack(item, filteredItems.filter(i => 
+        i.category === 'music' || 
+        i.metadata?.isNotionAudio ||
+        AUDIO_REGEX.test(i.url) ||
+        AUDIO_REGEX.test(i.name)
+      ));
       return;
     }
 
@@ -146,7 +158,7 @@ export default function HomePage() {
       itemUrl.includes('notion.site') ||
       itemUrl.includes('notion.com');
 
-    if (item.category === 'videos' || item.metadata?.isNotionVideo || (isNotion && !item.metadata?.isNotionAudio)) {
+    if (item.category === 'videos' || item.metadata?.isNotionVideo || (isNotion && !item.metadata?.isNotionAudio && !isAudioItem)) {
       setActiveVideo(item);
       return;
     }

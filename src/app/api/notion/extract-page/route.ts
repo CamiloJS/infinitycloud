@@ -10,6 +10,8 @@ interface CacheEntry {
 const extractCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
+export const AUDIO_EXT_REGEX = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
+
 interface ExtractedNotionDetails {
   pageId: string | null;
   blockId: string | null;
@@ -36,24 +38,8 @@ function extractNotionDetails(urlOrId: string): ExtractedNotionDetails {
     lower.includes('.ogv?')
   );
 
-  const isAudioExt = isHttp && (
-    lower.endsWith('.mp3') ||
-    lower.endsWith('.wav') ||
-    lower.endsWith('.ogg') ||
-    lower.endsWith('.m4a') ||
-    lower.endsWith('.aac') ||
-    lower.endsWith('.flac') ||
-    lower.endsWith('.opus') ||
-    lower.endsWith('.weba') ||
-    lower.includes('.mp3?') ||
-    lower.includes('.wav?') ||
-    lower.includes('.ogg?') ||
-    lower.includes('.m4a?') ||
-    lower.includes('.aac?') ||
-    lower.includes('.flac?') ||
-    lower.includes('.opus?') ||
-    lower.includes('.weba?')
-  );
+  const AUDIO_EXT_REGEX = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
+  const isAudioExt = isHttp && (AUDIO_EXT_REGEX.test(clean) || AUDIO_EXT_REGEX.test(lower));
 
   const isDirectVideoUrl = isHttp && (isVideoExt || (
     (lower.includes('amazonaws.com') || lower.includes('file.notion.so')) &&
@@ -61,8 +47,8 @@ function extractNotionDetails(urlOrId: string): ExtractedNotionDetails {
   ));
 
   const isDirectAudioUrl = isHttp && (isAudioExt || (
-    (lower.includes('amazonaws.com') || lower.includes('file.notion.so')) &&
-    (lower.includes('.mp3') || lower.includes('.wav') || lower.includes('.ogg') || lower.includes('.m4a') || lower.includes('.aac') || lower.includes('.flac') || lower.includes('/audio'))
+    (lower.includes('amazonaws.com') || lower.includes('file.notion.so') || lower.includes('notion-static.com')) &&
+    (AUDIO_EXT_REGEX.test(clean) || lower.includes('/audio'))
   ));
 
   let pageId: string | null = null;
@@ -160,26 +146,13 @@ function isAudioUrl(url: string): boolean {
   const clean = url.trim();
   if (!clean.startsWith('http://') && !clean.startsWith('https://')) return false;
   const l = clean.toLowerCase();
+  const AUDIO_EXT_REGEX = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
   return (
     l.includes('soundcloud.com/') ||
-    l.endsWith('.mp3') ||
-    l.endsWith('.wav') ||
-    l.endsWith('.ogg') ||
-    l.endsWith('.m4a') ||
-    l.endsWith('.aac') ||
-    l.endsWith('.flac') ||
-    l.endsWith('.opus') ||
-    l.endsWith('.weba') ||
-    l.includes('.mp3?') ||
-    l.includes('.wav?') ||
-    l.includes('.ogg?') ||
-    l.includes('.m4a?') ||
-    l.includes('.aac?') ||
-    l.includes('.flac?') ||
-    l.includes('.opus?') ||
-    l.includes('.weba?') ||
-    ((l.includes('amazonaws.com') || l.includes('file.notion.so')) && (
-      l.includes('.mp3') || l.includes('.wav') || l.includes('.ogg') || l.includes('.m4a') || l.includes('.aac') || l.includes('.flac') || l.includes('/audio')
+    AUDIO_EXT_REGEX.test(clean) ||
+    AUDIO_EXT_REGEX.test(l) ||
+    ((l.includes('amazonaws.com') || l.includes('file.notion.so') || l.includes('notion-static.com')) && (
+      AUDIO_EXT_REGEX.test(clean) || l.includes('/audio')
     ))
   );
 }
@@ -648,8 +621,13 @@ export async function POST(req: NextRequest) {
 
             // Check for audio in this block
             const isAudioBlock = val.type === 'audio';
-            const isFileWithAudio = val.type === 'file' && (
-              val.properties?.source?.[0]?.[0]?.match(/\.(mp3|wav|ogg|m4a|aac|flac|opus|weba)(\?.*)?$/i)
+            const rawAudioTitle = val.properties?.title?.[0]?.[0];
+            const isTitleAudio = typeof rawAudioTitle === 'string' && AUDIO_EXT_REGEX.test(rawAudioTitle);
+            const isFileWithAudio = (val.type === 'file' || val.type === 'audio') && (
+              isAudioBlock ||
+              isTitleAudio ||
+              AUDIO_EXT_REGEX.test(val.properties?.source?.[0]?.[0] || '') ||
+              AUDIO_EXT_REGEX.test(val.format?.display_source || '')
             );
             const isEmbedWithAudio = (val.type === 'embed' || val.type === 'bookmark') && (
               isAudioUrl(val.properties?.source?.[0]?.[0] || val.format?.display_source || '')
@@ -683,11 +661,10 @@ export async function POST(req: NextRequest) {
             if (isAudioBlock || isFileWithAudio || isEmbedWithAudio || propAudioUrl) {
               const blockSource = val.properties?.source?.[0]?.[0];
               const displaySource = val.format?.display_source;
-              let rawSource = (blockSource && isAudioUrl(blockSource))
-                ? blockSource
-                : (displaySource && isAudioUrl(displaySource)
-                  ? displaySource
-                  : (propAudioUrl || (blockSource && typeof blockSource === 'string' && blockSource.startsWith('http') ? blockSource : displaySource)));
+              let rawSource = propAudioUrl || 
+                (blockSource && typeof blockSource === 'string' && blockSource.startsWith('http') ? blockSource : null) || 
+                (displaySource && typeof displaySource === 'string' && displaySource.startsWith('http') ? displaySource : null);
+              if (!rawSource && blockSource && typeof blockSource === 'string') rawSource = blockSource;
 
               const rawTitle = val.properties?.title?.[0]?.[0];
               const rawCaption = val.properties?.caption?.[0]?.[0];
@@ -872,6 +849,88 @@ export async function POST(req: NextRequest) {
                         pageDescription
                       });
                     }
+
+                    // Extract Audio in collection rows
+                    let qAudioSource: string | null = null;
+                    const isQAudio = qVal.type === 'audio' ||
+                      (typeof qVal.properties?.title?.[0]?.[0] === 'string' && AUDIO_EXT_REGEX.test(qVal.properties?.title?.[0]?.[0])) ||
+                      (qVal.type === 'file' && AUDIO_EXT_REGEX.test(qVal.properties?.source?.[0]?.[0] || '')) ||
+                      ((qVal.type === 'embed' || qVal.type === 'bookmark') && isAudioUrl(qVal.properties?.source?.[0]?.[0] || ''));
+
+                    if (isQAudio) {
+                      qAudioSource = qVal.properties?.source?.[0]?.[0] || qVal.format?.display_source;
+                    }
+
+                    if (!qAudioSource && qVal.properties) {
+                      for (const pVal of Object.values(qVal.properties) as any[]) {
+                        if (Array.isArray(pVal)) {
+                          for (const seg of pVal) {
+                            if (Array.isArray(seg)) {
+                              if (typeof seg[0] === 'string' && isAudioUrl(seg[0])) {
+                                qAudioSource = seg[0];
+                                break;
+                              }
+                              if (Array.isArray(seg[1])) {
+                                for (const sub of seg[1]) {
+                                  if (Array.isArray(sub) && sub[0] === 'a' && typeof sub[1] === 'string' && isAudioUrl(sub[1])) {
+                                    qAudioSource = sub[1];
+                                    break;
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                        if (qAudioSource) break;
+                      }
+                    }
+
+                    if (qAudioSource) {
+                      const caption = qVal.properties?.title?.[0]?.[0] || pageTitle;
+                      let finalAudioUrl = qAudioSource;
+                      const isS3 = Boolean(qAudioSource && (qAudioSource.includes('amazonaws.com') || qAudioSource.includes('notion.so')));
+
+                      if (isS3) {
+                        try {
+                          const signRes = await fetch('https://www.notion.so/api/v3/getSignedFileUrls', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                            },
+                            signal: AbortSignal.timeout(2000),
+                            body: JSON.stringify({
+                              urls: [{
+                                url: qAudioSource,
+                                permissionRecord: { table: 'block', id: qId }
+                              }]
+                            })
+                          });
+                          if (signRes.ok) {
+                            const signData = await signRes.json();
+                            if (signData?.signedUrls?.[0]) {
+                              finalAudioUrl = signData.signedUrls[0];
+                            }
+                          }
+                        } catch {
+                          // keep original url
+                        }
+                      }
+
+                      addExtractedAudio({
+                        id: qId,
+                        url: finalAudioUrl,
+                        title: caption,
+                        caption,
+                        coverUrl: coverUrl || undefined,
+                        notionBlockId: qId,
+                        notionPageId: formattedId,
+                        isExpiringS3: isS3,
+                        sourceType: isS3 ? 'notion_block' : 'embed',
+                        pageTitle,
+                        pageDescription
+                      });
+                    }
                   }
                 }
               } catch {
@@ -931,6 +990,7 @@ export async function POST(req: NextRequest) {
 
       if (htmlRes.ok) {
         const html = await htmlRes.text();
+        const cleanHtml = html.replace(/\\\//g, '/');
 
         // 1. Extract title
         const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
@@ -1094,7 +1154,8 @@ export async function POST(req: NextRequest) {
         }
 
         // 5. Check for direct S3 / Notion audio links in HTML
-        const s3AudioMatch = html.match(/https?:\/\/(?:prod-files-secure\.s3\.us-west-2\.amazonaws\.com|file\.notion\.so\/f\/f\/|s3(?:-|\.)us-west-2\.amazonaws\.com\/secure\.notion-static\.com)[^"'\s<>]+\.(?:mp3|wav|ogg|m4a|aac|flac|opus|weba)(?:\?[^"'\s<>]*)?/i);
+        const s3AudioMatch = cleanHtml.match(/https?:\/\/(?:prod-files-secure\.s3\.us-west-2\.amazonaws\.com|file\.notion\.so\/f\/f\/|s3(?:-|\.)us-west-2\.amazonaws\.com\/secure\.notion-static\.com)[^"'\s<>]+\.(?:mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)(?:\?[^"'\s<>]*)?/i) ||
+                             html.match(/https?:\/\/(?:prod-files-secure\.s3\.us-west-2\.amazonaws\.com|file\.notion\.so\/f\/f\/|s3(?:-|\.)us-west-2\.amazonaws\.com\/secure\.notion-static\.com)[^"'\s<>]+\.(?:mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)(?:\?[^"'\s<>]*)?/i);
         if (s3AudioMatch && s3AudioMatch[0]) {
           addExtractedAudio({
             id: 'scrape_s3_audio',
@@ -1164,8 +1225,10 @@ export async function POST(req: NextRequest) {
         }
 
         // 8. Generic HTML audio tags or direct MP3/WAV/OGG/M4A match
-        const genericAudioMatch = html.match(/<audio[^>]+src=["']([^"']+)["']/i) ||
-                                  html.match(/https?:\/\/[^"'\s<>]+\.(?:mp3|wav|ogg|m4a|aac|flac|opus|weba)(?:\?[^"'\s<>]*)?/i);
+        const genericAudioMatch = cleanHtml.match(/<audio[^>]+src=["']([^"']+)["']/i) ||
+                                  cleanHtml.match(/https?:\/\/[^"'\s<>]+\.(?:mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)(?:\?[^"'\s<>]*)?/i) ||
+                                  html.match(/<audio[^>]+src=["']([^"']+)["']/i) ||
+                                  html.match(/https?:\/\/[^"'\s<>]+\.(?:mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)(?:\?[^"'\s<>]*)?/i);
 
         if (genericAudioMatch) {
           const audioUrl = genericAudioMatch[1] || genericAudioMatch[0];

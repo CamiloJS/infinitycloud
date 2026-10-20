@@ -122,7 +122,17 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
               setNotionVideos(vids);
               setNotionAudios(auds);
 
-              if (vids.length > 0) {
+              const AUDIO_REGEX = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
+              const urlIsAudio = AUDIO_REGEX.test(trimmed);
+
+              if (auds.length > 0 && (urlIsAudio || vids.length === 0 || category === 'music')) {
+                setSelectedNotionAudio(auds[0]);
+                setNotionAudioDetected(true);
+                setCategory('music');
+                if (!name.trim() || name === 'Recurso de Notion' || name === 'Página de Notion' || name === 'Notion') {
+                  setName(auds[0].title || data.pageTitle || 'Audio de Notion');
+                }
+              } else if (vids.length > 0) {
                 setSelectedNotionVideo(vids[0]);
                 setNotionVideoDetected(true);
                 setCategory('videos');
@@ -197,12 +207,21 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       const isNotion = detectedProvider === 'notion' || cleanUrl.includes('notion');
       const customMeta: Record<string, any> = {};
 
+      const AUDIO_REGEX = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
+      const isAudioExplicit = category === 'music' || AUDIO_REGEX.test(cleanUrl) || directNotionAudioUrl.trim() !== '';
+
       if (isNotion) {
         if (directNotionAudioUrl.trim()) {
           customMeta.s3Url = directNotionAudioUrl.trim();
           customMeta.isNotionAudio = true;
           customMeta.originalUrl = cleanUrl;
-        } else if (selectedNotionAudio && (!selectedNotionVideo || category === 'music')) {
+        } else if (selectedNotionAudio && (isAudioExplicit || !selectedNotionVideo)) {
+          customMeta.s3Url = selectedNotionAudio.url;
+          customMeta.isNotionAudio = true;
+          customMeta.notionBlockId = selectedNotionAudio.notionBlockId;
+          customMeta.notionPageId = selectedNotionAudio.notionPageId;
+          customMeta.originalUrl = cleanUrl;
+        } else if (isAudioExplicit && selectedNotionAudio) {
           customMeta.s3Url = selectedNotionAudio.url;
           customMeta.isNotionAudio = true;
           customMeta.notionBlockId = selectedNotionAudio.notionBlockId;
@@ -212,7 +231,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
           customMeta.s3Url = directNotionVideoUrl.trim();
           customMeta.isNotionVideo = true;
           customMeta.originalUrl = cleanUrl;
-        } else if (selectedNotionVideo && isValidDirectVideoStream(selectedNotionVideo.url)) {
+        } else if (selectedNotionVideo && isValidDirectVideoStream(selectedNotionVideo.url) && !isAudioExplicit) {
           customMeta.s3Url = selectedNotionVideo.url;
           customMeta.isNotionVideo = true;
           customMeta.notionBlockId = selectedNotionVideo.notionBlockId;
@@ -235,7 +254,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       }
 
       let finalCat: CategoryType | undefined = userChangedCategory ? category : undefined;
-      if (customMeta.isNotionAudio || (notionAudioDetected && !notionVideoDetected)) {
+      if (customMeta.isNotionAudio || (notionAudioDetected && !notionVideoDetected) || isAudioExplicit) {
         finalCat = 'music';
       } else if (customMeta.isNotionVideo || notionVideoDetected) {
         finalCat = 'videos';

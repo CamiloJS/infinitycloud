@@ -87,7 +87,7 @@ export function Sidebar({
   const totalTrash = items.filter(i => i.isTrash).length;
 
   return (
-    <aside className="w-64 h-screen bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between shrink-0 select-none hidden md:flex">
+    <aside className="w-64 h-screen bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 flex flex-col justify-between shrink-0 select-none hidden md:flex relative z-30">
       {/* Top Part */}
       <div className="p-4 flex-1 overflow-y-auto">
         {/* Brand */}

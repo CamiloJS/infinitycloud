@@ -189,21 +189,33 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
     customMetadata?: Record<string, any>
   ): Promise<InfinityItem> => {
     const detected = await adapterRegistry.detect(url);
-    const isNotionVideo = Boolean(
+    const AUDIO_REGEX = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
+    const isExplicitAudioUrl = AUDIO_REGEX.test(url) || AUDIO_REGEX.test(customMetadata?.s3Url || '') || AUDIO_REGEX.test(customName || '');
+
+    const isNotionAudio = Boolean(
+      customMetadata?.isNotionAudio || 
+      detected.metadata?.isNotionAudio || 
+      customCategory === 'music' ||
+      isExplicitAudioUrl ||
+      (detected.provider === 'notion' && detected.category === 'music')
+    );
+
+    const isNotionVideo = !isNotionAudio && Boolean(
       customMetadata?.isNotionVideo || 
       detected.metadata?.isNotionVideo || 
       (detected.provider === 'notion' && detected.category === 'videos')
     );
+
     const finalName = customName?.trim() || customMetadata?.title || detected.name;
-    const finalCategory = isNotionVideo ? 'videos' : (customCategory || detected.category);
+    const finalCategory = isNotionAudio ? 'music' : (isNotionVideo ? 'videos' : (customCategory || detected.category));
     const finalUrl = customMetadata?.s3Url || 
-      ((detected.metadata?.isNotionVideo && detected.metadata?.s3Url) 
-        ? detected.metadata.s3Url 
-        : url);
+      (isNotionAudio && detected.metadata?.s3Url ? detected.metadata.s3Url :
+      (isNotionVideo && detected.metadata?.s3Url ? detected.metadata.s3Url : url));
 
     const mergedMetadata = {
       ...(detected.metadata || {}),
       ...(customMetadata || {}),
+      isNotionAudio: isNotionAudio ? true : detected.metadata?.isNotionAudio,
       isNotionVideo: isNotionVideo ? true : detected.metadata?.isNotionVideo
     };
 
@@ -214,7 +226,7 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
       url: finalUrl,
       provider: customMetadata?.provider || detected.provider,
       category: finalCategory,
-      mimeType: detected.mimeType || (isNotionVideo ? 'video/mp4' : undefined),
+      mimeType: detected.mimeType || (isNotionAudio ? 'audio/mpeg' : (isNotionVideo ? 'video/mp4' : undefined)),
       thumbnailUrl: customMetadata?.thumbnailUrl || detected.thumbnailUrl,
       collectionId: collectionId || null,
       isFavorite: false,

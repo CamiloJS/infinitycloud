@@ -121,8 +121,8 @@ export function BottomPlayer() {
         </div>
       )}
 
-      {/* Main Persistent Bar */}
-      <div className="fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl transition-all select-none">
+      {/* Main Persistent Bar (does not overlap the desktop sidebar) */}
+      <div className="fixed bottom-0 left-0 md:left-64 right-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-2xl transition-all select-none">
         {/* Progress Bar (interactive) */}
         {!isSoundCloud && (
           <div
