@@ -92,10 +92,15 @@ export function ItemCard({ item, onOpen, onEdit, onMove, readOnly }: ItemCardPro
   return (
     <div
       onClick={() => onOpen(item)}
-      className="group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:border-blue-500/40 transition-all duration-200 flex flex-col cursor-pointer"
+      draggable={!item.isTrash}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', item.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      className="group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:border-blue-500/40 transition-all duration-200 flex flex-col cursor-pointer active:cursor-grabbing"
     >
-      {/* Thumbnail / Preview Area */}
-      <div className="relative w-full aspect-video bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden">
+      {/* Thumbnail / Preview Area - Square for music, 16:9 for other formats */}
+      <div className={`relative w-full ${item.category === 'music' ? 'aspect-square' : 'aspect-video'} bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden`}>
         {thumbSrc && !imgError ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
@@ -183,6 +188,11 @@ export function ItemCard({ item, onOpen, onEdit, onMove, readOnly }: ItemCardPro
           <h3 className="font-medium text-xs sm:text-sm text-slate-900 dark:text-white line-clamp-2 title-hover group-hover:text-blue-500 transition-colors" title={item.name}>
             {item.name}
           </h3>
+          {item.category === 'music' && item.metadata?.artist && (
+            <p className="text-[11px] text-violet-600 dark:text-violet-400 font-medium truncate mt-0.5" title={item.metadata.artist}>
+              {item.metadata.artist}
+            </p>
+          )}
         </div>
 
         {/* Footer with Menu Actions */}

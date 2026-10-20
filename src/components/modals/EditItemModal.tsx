@@ -17,7 +17,8 @@ import {
   ShieldCheck,
   Upload,
   Trash2,
-  Loader2
+  Loader2,
+  Music
 } from 'lucide-react';
 
 interface EditItemModalProps {
@@ -37,6 +38,12 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
   const [description, setDescription] = useState<string>('');
   const [tags, setTags] = useState<string>('');
   
+  // Music specific metadata
+  const [artist, setArtist] = useState<string>('');
+  const [album, setAlbum] = useState<string>('');
+  const [year, setYear] = useState<string>('');
+  const [genre, setGenre] = useState<string>('');
+
   // Password security
   const [enablePassword, setEnablePassword] = useState<boolean>(false);
   const [newPassword, setNewPassword] = useState<string>('');
@@ -55,6 +62,10 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
       setThumbnailUrl(item.thumbnailUrl || '');
       setDescription(item.metadata?.description || '');
       setTags(Array.isArray(item.metadata?.tags) ? item.metadata.tags.join(', ') : (item.metadata?.tags || ''));
+      setArtist(item.metadata?.artist || '');
+      setAlbum(item.metadata?.album || '');
+      setYear(item.metadata?.year || '');
+      setGenre(item.metadata?.genre || '');
       setHasExistingPassword(Boolean(item.isProtected && item.passwordHash));
       setEnablePassword(Boolean(item.isProtected && item.passwordHash));
       setNewPassword('');
@@ -72,7 +83,12 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
     setUploadingThumb(true);
     setThumbError(null);
     try {
-      const dataUrl = await processUploadedThumbnail(file);
+      const isMusic = category === 'music';
+      const dataUrl = await processUploadedThumbnail(
+        file, 
+        isMusic ? 500 : 640, 
+        isMusic ? 500 : 360
+      );
       setThumbnailUrl(dataUrl);
     } catch (err: any) {
       setThumbError(err.message || 'Error al procesar la imagen');
@@ -112,7 +128,11 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
         metadata: {
           ...(item.metadata || {}),
           description: description.trim() || undefined,
-          tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : []
+          tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+          artist: artist.trim() || undefined,
+          album: album.trim() || undefined,
+          year: year.trim() || undefined,
+          genre: genre.trim() || undefined
         }
       };
 
@@ -152,7 +172,7 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
             </div>
             <div>
               <h3 className="font-bold text-sm sm:text-base text-slate-800 dark:text-white">Editar información y metadatos</h3>
-              <p className="text-[11px] text-slate-400">Personaliza nombre, miniatura 16:9 y contraseña</p>
+              <p className="text-[11px] text-slate-400">Personaliza nombre, miniatura, metadatos y contraseña</p>
             </div>
           </div>
           <button
@@ -188,7 +208,7 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
             }`}
           >
             <ImageIcon size={14} />
-            <span>Miniatura (16:9)</span>
+            <span>{category === 'music' ? 'Carátula (1:1)' : 'Miniatura (16:9)'}</span>
           </button>
 
           <button
@@ -270,6 +290,68 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
                 </div>
               </div>
 
+              {/* Music Specific Metadata */}
+              {category === 'music' && (
+                <div className="p-4 rounded-2xl bg-violet-500/10 border border-violet-500/20 space-y-3">
+                  <div className="flex items-center gap-2 text-violet-600 dark:text-violet-400 font-semibold text-xs">
+                    <Music size={15} />
+                    <span>Metadatos de Música / Canción</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                        Artista / Intérprete
+                      </label>
+                      <input
+                        type="text"
+                        value={artist}
+                        onChange={(e) => setArtist(e.target.value)}
+                        placeholder="ej. Queen, Daft Punk"
+                        className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-violet-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                        Álbum / Disco
+                      </label>
+                      <input
+                        type="text"
+                        value={album}
+                        onChange={(e) => setAlbum(e.target.value)}
+                        placeholder="ej. Discovery, A Night at the Opera"
+                        className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-violet-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                        Año
+                      </label>
+                      <input
+                        type="text"
+                        value={year}
+                        onChange={(e) => setYear(e.target.value)}
+                        placeholder="ej. 2001"
+                        className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-violet-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                        Género
+                      </label>
+                      <input
+                        type="text"
+                        value={genre}
+                        onChange={(e) => setGenre(e.target.value)}
+                        placeholder="ej. Rock, Pop, Electrónica"
+                        className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-violet-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
                   URL del recurso original
@@ -295,7 +377,7 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
               {/* Local Image File Upload Area */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-                  Subir imagen local
+                  Subir imagen local {category === 'music' ? '(Carátula 1:1)' : '(Miniatura 16:9)'}
                 </label>
                 <label className="flex items-center gap-3 p-3.5 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 dark:hover:border-blue-400 bg-slate-50/60 dark:bg-slate-950/60 cursor-pointer transition-all group">
                   <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500 group-hover:scale-110 transition-transform shrink-0">
@@ -307,10 +389,14 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                      {uploadingThumb ? 'Ajustando imagen a 16:9...' : 'Elegir imagen desde tu dispositivo'}
+                      {uploadingThumb 
+                        ? (category === 'music' ? 'Ajustando carátula a 1:1...' : 'Ajustando imagen a 16:9...')
+                        : 'Elegir imagen desde tu dispositivo'}
                     </p>
                     <p className="text-[11px] text-slate-400 truncate">
-                      JPG, PNG, WebP — Recorte inteligente 16:9 sin franjas negras
+                      {category === 'music'
+                        ? 'JPG, PNG, WebP — Recorte inteligente 1:1 cuadrado de álbum'
+                        : 'JPG, PNG, WebP — Recorte inteligente 16:9 sin franjas negras'}
                     </p>
                   </div>
                   <input
@@ -356,11 +442,11 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
                 </div>
               </div>
 
-              {/* 16:9 Clean Preview Area */}
+              {/* Clean Preview Area */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Vista previa (Formato 16:9 sin franjas)
+                    {category === 'music' ? 'Vista previa (Formato cuadrado 1:1)' : 'Vista previa (Formato 16:9 sin franjas)'}
                   </span>
                   {thumbnailUrl && (
                     <button
@@ -375,7 +461,7 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
                   )}
                 </div>
 
-                <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center shadow-inner group">
+                <div className={`relative ${category === 'music' ? 'w-48 aspect-square mx-auto' : 'w-full aspect-video'} rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center shadow-inner group`}>
                   {thumbnailUrl ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
@@ -386,13 +472,19 @@ export function EditItemModal({ item, isOpen, onClose }: EditItemModalProps) {
                     />
                   ) : (
                     <div className="text-center p-4 text-slate-400 text-xs">
-                      <ImageIcon size={28} className="mx-auto mb-2 opacity-40" />
+                      {category === 'music' ? (
+                        <Music size={28} className="mx-auto mb-2 opacity-40 text-violet-500" />
+                      ) : (
+                        <ImageIcon size={28} className="mx-auto mb-2 opacity-40" />
+                      )}
                       <span>Sin miniatura asignada</span>
                     </div>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-400 mt-2">
-                  Todas las miniaturas subidas se optimizan en formato 16:9 de alta definición para eliminar franjas negras.
+                <p className="text-[11px] text-slate-400 mt-2 text-center">
+                  {category === 'music'
+                    ? 'Las pistas de música utilizan carátulas cuadradas 1:1 estilo disco/álbum.'
+                    : 'Todas las miniaturas subidas se optimizan en formato 16:9 de alta definición para eliminar franjas negras.'}
                 </p>
               </div>
             </div>

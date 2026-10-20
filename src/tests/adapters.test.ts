@@ -160,7 +160,9 @@ describe('Provider Adapters', () => {
         }
       };
       const directUrl = notion.getDirectUrl(item);
-      expect(directUrl).toBe('/api/notion/resolve?itemId=item-audio-123');
+      expect(directUrl).toContain('/api/notion/resolve?itemId=item-audio-123');
+      expect(directUrl).toContain('proxy=1');
+      expect(directUrl).toContain('blockId=block-123');
     });
   });
 

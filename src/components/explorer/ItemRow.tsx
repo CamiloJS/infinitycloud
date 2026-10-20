@@ -76,11 +76,16 @@ export function ItemRow({ item, onOpen, onEdit, onMove, readOnly }: ItemRowProps
   return (
     <div
       onClick={() => onOpen(item)}
+      draggable={!item.isTrash}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', item.id);
+        e.dataTransfer.effectAllowed = 'move';
+      }}
       className={`group flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-900 border ${
         isCurrentPlaying
           ? 'border-violet-500/60 ring-1 ring-violet-500/40 bg-violet-50/20 dark:bg-violet-950/20'
           : 'border-slate-200/80 dark:border-slate-800/80 hover:border-blue-500/40'
-      } hover:shadow-md transition-all cursor-pointer select-none text-xs sm:text-sm`}
+      } hover:shadow-md transition-all cursor-pointer select-none text-xs sm:text-sm active:cursor-grabbing`}
     >
       {/* Left: Thumbnail & Title */}
       <div className="flex items-center gap-3 min-w-0 flex-1 pr-4">
@@ -110,6 +115,11 @@ export function ItemRow({ item, onOpen, onEdit, onMove, readOnly }: ItemRowProps
             <span className="font-medium text-slate-900 dark:text-white truncate">
               {item.name}
             </span>
+            {item.category === 'music' && item.metadata?.artist && (
+              <span className="text-xs text-violet-600 dark:text-violet-400 font-medium truncate">
+                • {item.metadata.artist}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">

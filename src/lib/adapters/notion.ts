@@ -188,10 +188,14 @@ export class NotionAdapter implements ProviderAdapter {
   getDirectUrl(item: InfinityItem): string {
     // If it's a Notion hosted file with signed URL, route through secure refresh proxy
     if (item.metadata?.notionBlockId || item.metadata?.notionPageId || item.metadata?.isNotionVideo || item.metadata?.isNotionAudio) {
-      return `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}`;
+      const targetUrl = item.metadata?.s3Url || item.url || '';
+      const blockId = item.metadata?.notionBlockId ? `&blockId=${encodeURIComponent(item.metadata.notionBlockId)}` : '';
+      const pageId = item.metadata?.notionPageId ? `&pageId=${encodeURIComponent(item.metadata.notionPageId)}` : '';
+      const urlParam = targetUrl ? `&url=${encodeURIComponent(targetUrl)}` : '';
+      return `/api/notion/resolve?itemId=${encodeURIComponent(item.id || '')}${urlParam}${blockId}${pageId}&proxy=1`;
     }
     if (item.metadata?.s3Url) {
-      return item.metadata.s3Url;
+      return `/api/proxy/media?url=${encodeURIComponent(item.metadata.s3Url)}`;
     }
     return item.url;
   }

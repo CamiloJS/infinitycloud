@@ -10,6 +10,8 @@ import { MobileNav } from '@/components/layout/MobileNav';
 import { CategoryCards } from '@/components/explorer/CategoryCards';
 import { ItemCard } from '@/components/explorer/ItemCard';
 import { ItemRow } from '@/components/explorer/ItemRow';
+import { FolderCard } from '@/components/explorer/FolderCard';
+import { FolderRow } from '@/components/explorer/FolderRow';
 import { EmptyState } from '@/components/explorer/EmptyState';
 import { LoginView } from '@/components/auth/LoginView';
 import { PhotoViewer } from '@/components/viewers/PhotoViewer';
@@ -34,7 +36,9 @@ import {
   Trash2, 
   Star, 
   ChevronRight,
-  Share2
+  Share2,
+  Folder,
+  CheckCircle2
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -51,12 +55,33 @@ export default function HomePage() {
     setActiveView,
     isItemUnlocked,
     unlockItem,
-    editItem
+    editItem,
+    moveToCollection,
+    deleteCollection
   } = useItems();
   const { playTrack } = usePlayer();
 
   // Mobile drawer
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [dropFeedback, setDropFeedback] = useState<string | null>(null);
+
+  const handleDropOnFolder = async (itemId: string, targetCollId: string) => {
+    const droppedItem = items.find(i => i.id === itemId);
+    const targetColl = collections.find(c => c.id === targetCollId);
+    try {
+      await moveToCollection(itemId, targetCollId);
+      setDropFeedback(
+        droppedItem 
+          ? `"${droppedItem.name}" se movió a "${targetColl?.name || 'Carpeta'}"`
+          : `Elemento movido a "${targetColl?.name || 'Carpeta'}"`
+      );
+      setTimeout(() => {
+        setDropFeedback(null);
+      }, 3500);
+    } catch (err) {
+      console.error('Error moving item to folder on drop:', err);
+    }
+  };
 
   // Modals state
   const [addModalOpen, setAddModalOpen] = useState<boolean>(false);
@@ -276,12 +301,135 @@ export default function HomePage() {
           {/* Category Chips (in main library) */}
           <CategoryCards />
 
+          {/* Folders Section in Root Library View */}
+          {activeView === 'library' && !activeCollectionId && collections.length > 0 && (
+            <div className="mb-8 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Carpetas
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                    {collections.length}
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    setEditingCollId(null);
+                    setEditingCollName('');
+                    setCollectionModalOpen(true);
+                  }}
+                  className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-500 transition-colors flex items-center gap-1"
+                >
+                  + Nueva carpeta
+                </button>
+              </div>
+
+              {viewMode === 'grid' ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3.5">
+                  {collections.map(coll => (
+                    <FolderCard
+                      key={coll.id}
+                      collection={coll}
+                      itemCount={items.filter(i => i.collectionId === coll.id && !i.isTrash).length}
+                      onClick={() => setActiveCollectionId(coll.id)}
+                      onDropItem={handleDropOnFolder}
+                      onShare={(c) => setSharingColl(c)}
+                      onEdit={(c) => {
+                        setEditingCollId(c.id);
+                        setEditingCollName(c.name);
+                        setCollectionModalOpen(true);
+                      }}
+                      onDelete={(c) => {
+                        if (window.confirm(`¿Eliminar la carpeta "${c.name}"? Los archivos que contiene no se borrarán.`)) {
+                          deleteCollection(c.id);
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {collections.map(coll => (
+                    <FolderRow
+                      key={coll.id}
+                      collection={coll}
+                      itemCount={items.filter(i => i.collectionId === coll.id && !i.isTrash).length}
+                      onClick={() => setActiveCollectionId(coll.id)}
+                      onDropItem={handleDropOnFolder}
+                      onShare={(c) => setSharingColl(c)}
+                      onEdit={(c) => {
+                        setEditingCollId(c.id);
+                        setEditingCollName(c.name);
+                        setCollectionModalOpen(true);
+                      }}
+                      onDelete={(c) => {
+                        if (window.confirm(`¿Eliminar la carpeta "${c.name}"? Los archivos que contiene no se borrarán.`)) {
+                          deleteCollection(c.id);
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Files Section Header (when folders are also shown) */}
+          {activeView === 'library' && !activeCollectionId && collections.length > 0 && filteredItems.length > 0 && (
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Archivos
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                  {filteredItems.length}
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                Arrastra un archivo sobre una carpeta para organizarlo
+              </span>
+            </div>
+          )}
+
           {/* Main Grid or List View */}
           {filteredItems.length === 0 ? (
-            <EmptyState
-              onOpenAddModal={() => setAddModalOpen(true)}
-              onOpenNotionModal={() => setNotionModalOpen(true)}
-            />
+            activeCollectionId ? (
+              <div className="p-12 text-center rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center mx-auto text-slate-400">
+                  <Folder size={24} />
+                </div>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Esta carpeta está vacía
+                </p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  Arrastra archivos hacia esta carpeta desde la raíz o añade nuevos enlaces aquí.
+                </p>
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  <button
+                    onClick={() => setAddModalOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium shadow-sm transition-all"
+                  >
+                    Añadir a esta carpeta
+                  </button>
+                  <button
+                    onClick={() => setActiveCollectionId(null)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    Volver a la raíz
+                  </button>
+                </div>
+              </div>
+            ) : collections.length > 0 && activeView === 'library' ? (
+              <div className="p-8 text-center rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-slate-400 text-xs">
+                <span>No hay archivos en la raíz. Puedes arrastrar archivos a una carpeta o usar el botón &ldquo;Añadir&rdquo;.</span>
+              </div>
+            ) : (
+              <EmptyState
+                onOpenAddModal={() => setAddModalOpen(true)}
+                onOpenNotionModal={() => setNotionModalOpen(true)}
+              />
+            )
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredItems.map(item => (
@@ -430,6 +578,14 @@ export default function HomePage() {
         initialItem={editingDocumentItem}
         initialCollectionId={activeCollectionId}
       />
+
+      {/* Drop Feedback Toast */}
+      {dropFeedback && (
+        <div className="fixed bottom-24 sm:bottom-8 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-slate-900/95 dark:bg-white/95 text-white dark:text-slate-900 text-xs font-semibold shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-3 duration-200 border border-white/10 dark:border-slate-800">
+          <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+          <span>{dropFeedback}</span>
+        </div>
+      )}
     </div>
   );
 }

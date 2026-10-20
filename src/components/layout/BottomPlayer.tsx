@@ -164,7 +164,13 @@ export function BottomPlayer() {
                 {currentTrack.name}
               </div>
               <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-                <span className="capitalize">{currentTrack.provider}</span>
+                {currentTrack.metadata?.artist ? (
+                  <span className="font-semibold text-violet-600 dark:text-violet-400 truncate max-w-[130px]" title={currentTrack.metadata.artist}>
+                    {currentTrack.metadata.artist}
+                  </span>
+                ) : (
+                  <span className="capitalize">{currentTrack.provider}</span>
+                )}
                 {!isSoundCloud && duration > 0 && (
                   <>
                     <span>•</span>

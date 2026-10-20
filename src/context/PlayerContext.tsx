@@ -61,6 +61,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const queueRef = useRef<InfinityItem[]>(queue);
   const currentIndexRef = useRef<number>(currentIndex);
   const isShuffledRef = useRef<boolean>(isShuffled);
+  const currentTrackRef = useRef<InfinityItem | null>(currentTrack);
+
+  useEffect(() => {
+    currentTrackRef.current = currentTrack;
+  }, [currentTrack]);
 
   useEffect(() => {
     repeatModeRef.current = repeatMode;
@@ -102,6 +107,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
     const onError = (e: any) => {
       console.warn('Audio playback error:', e);
+      // Auto-fallback: If direct stream failed, try proxying through /api/proxy/media!
+      const current = currentTrackRef.current;
+      if (current && audioRef.current) {
+        const rawUrl = current.metadata?.s3Url || current.url;
+        if (rawUrl && !audioRef.current.src.includes('/api/proxy/media')) {
+          const proxiedUrl = `/api/proxy/media?url=${encodeURIComponent(rawUrl)}`;
+          audioRef.current.src = proxiedUrl;
+          audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+          return;
+        }
+      }
       setIsPlaying(false);
     };
 
@@ -139,14 +155,64 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (item.provider !== 'soundcloud') {
       const audio = audioRef.current;
       if (audio) {
+        const itemUrl = String(item.url || '');
+        const isNotion = item.provider === 'notion' ||
+          itemUrl.includes('notion.so') ||
+          itemUrl.includes('notion.site') ||
+          itemUrl.includes('notion.com') ||
+          Boolean(item.metadata?.isNotionAudio);
+
+        const isAudioFile = (url?: string) => {
+          if (!url) return false;
+          const l = url.toLowerCase();
+          return l.endsWith('.mp3') || l.endsWith('.wav') || l.endsWith('.ogg') || l.endsWith('.m4a') || l.endsWith('.flac') || l.includes('prod-files-secure.s3') || l.includes('file.notion.so');
+        };
+
+        // If Notion item lacks direct s3 audio stream, extract on-demand from page
+        if (isNotion && (!item.metadata?.s3Url || !isAudioFile(item.metadata.s3Url))) {
+          fetch('/api/notion/extract-page', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: item.metadata?.originalUrl || item.url })
+          })
+            .then(r => r.json())
+            .then(data => {
+              const aud = (data.foundAudio && data.audio) ? data.audio : (data.audios || [])[0];
+              if (aud?.url) {
+                const streamUrl = `/api/proxy/media?url=${encodeURIComponent(aud.url)}`;
+                audio.src = streamUrl;
+                audio.volume = isMuted ? 0 : volume;
+                audio.play().then(() => setIsPlaying(true)).catch(() => {});
+                setCurrentTrack(prev => prev ? {
+                  ...prev,
+                  thumbnailUrl: aud.coverUrl || prev.thumbnailUrl,
+                  metadata: {
+                    ...prev.metadata,
+                    s3Url: aud.url,
+                    notionBlockId: aud.notionBlockId,
+                    isNotionAudio: true
+                  }
+                } : null);
+              }
+            })
+            .catch(err => console.warn('Could not extract Notion audio on-demand:', err));
+          return;
+        }
+
         const audioSrc = adapterRegistry.getDirectUrl(item);
         audio.src = audioSrc;
         audio.volume = isMuted ? 0 : volume;
         audio.play().then(() => {
           setIsPlaying(true);
         }).catch(err => {
-          console.warn('Playback failed:', err);
-          setIsPlaying(false);
+          console.warn('Playback failed, trying proxy fallback:', err);
+          const rawUrl = item.metadata?.s3Url || item.url;
+          if (rawUrl && !audio.src.includes('/api/proxy/media')) {
+            audio.src = `/api/proxy/media?url=${encodeURIComponent(rawUrl)}`;
+            audio.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+          } else {
+            setIsPlaying(false);
+          }
         });
       }
     } else {

@@ -165,7 +165,8 @@ describe('Folder Sharing and Notion Video Extraction', () => {
     };
 
     const directUrl = adapter.getDirectUrl(dummyItem);
-    expect(directUrl).toBe('/api/notion/resolve?itemId=item_notion_vid_123');
+    expect(directUrl).toContain('/api/notion/resolve?itemId=item_notion_vid_123');
+    expect(directUrl).toContain('proxy=1');
   });
 
   it('NotionAdapter generates clean embed URL for embedded YouTube videos extracted from Notion page', async () => {

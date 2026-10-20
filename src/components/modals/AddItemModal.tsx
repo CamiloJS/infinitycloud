@@ -29,6 +29,8 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
   const [notionAudios, setNotionAudios] = useState<any[]>([]);
   const [selectedNotionAudio, setSelectedNotionAudio] = useState<any | null>(null);
   const [directNotionAudioUrl, setDirectNotionAudioUrl] = useState<string>('');
+  const [artist, setArtist] = useState<string>('');
+  const [album, setAlbum] = useState<string>('');
   const [isSearchingNotionVideos, setIsSearchingNotionVideos] = useState<boolean>(false);
   const [userChangedCategory, setUserChangedCategory] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
@@ -43,6 +45,8 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       setName('');
       setCategory('others');
       setCollectionId('');
+      setArtist('');
+      setAlbum('');
       setDetectedProvider(null);
       setIsAnalyzing(false);
       setNotionVideoDetected(false);
@@ -69,7 +73,12 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
     setIsUploadingThumb(true);
     setThumbError(null);
     try {
-      const dataUrl = await processUploadedThumbnail(file);
+      const isMusic = category === 'music' || notionAudioDetected;
+      const dataUrl = await processUploadedThumbnail(
+        file,
+        isMusic ? 500 : 640,
+        isMusic ? 500 : 360
+      );
       setCustomThumbnailUrl(dataUrl);
     } catch (err: any) {
       setThumbError(err.message || 'Error al procesar la imagen');
@@ -216,6 +225,13 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
 
       if (customThumbnailUrl) {
         customMeta.thumbnailUrl = customThumbnailUrl;
+      }
+
+      if (artist.trim()) {
+        customMeta.artist = artist.trim();
+      }
+      if (album.trim()) {
+        customMeta.album = album.trim();
       }
 
       let finalCat: CategoryType | undefined = userChangedCategory ? category : undefined;
@@ -533,11 +549,47 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
             </div>
           </div>
 
-          {/* Optional Custom 16:9 Thumbnail Upload */}
+          {/* Music Specific Metadata (Optional on Add) */}
+          {(category === 'music' || notionAudioDetected) && (
+            <div className="p-3.5 rounded-2xl bg-violet-500/10 border border-violet-500/20 space-y-2.5 animate-in fade-in">
+              <div className="flex items-center gap-1.5 text-violet-600 dark:text-violet-400 font-semibold text-xs">
+                <Music size={14} />
+                <span>Metadatos de Música (Opcional)</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                    Artista / Cantante
+                  </label>
+                  <input
+                    type="text"
+                    value={artist}
+                    onChange={(e) => setArtist(e.target.value)}
+                    placeholder="ej. Queen"
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-violet-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                    Álbum
+                  </label>
+                  <input
+                    type="text"
+                    value={album}
+                    onChange={(e) => setAlbum(e.target.value)}
+                    placeholder="ej. Greatest Hits"
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-violet-500"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Optional Custom Thumbnail Upload */}
           <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80">
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Miniatura 16:9 (Opcional)
+                {(category === 'music' || notionAudioDetected) ? 'Carátula 1:1 Cuadrada (Opcional)' : 'Miniatura 16:9 (Opcional)'}
               </label>
               {customThumbnailUrl && (
                 <button
@@ -552,7 +604,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
             </div>
 
             {customThumbnailUrl ? (
-              <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-inner">
+              <div className={`relative ${(category === 'music' || notionAudioDetected) ? 'w-36 aspect-square mx-auto' : 'w-full aspect-video'} rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shadow-inner`}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={customThumbnailUrl}
@@ -571,10 +623,14 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    {isUploadingThumb ? 'Procesando imagen...' : 'Subir imagen desde tu equipo'}
+                    {isUploadingThumb 
+                      ? ((category === 'music' || notionAudioDetected) ? 'Ajustando carátula a 1:1...' : 'Procesando imagen...') 
+                      : 'Subir imagen desde tu equipo'}
                   </p>
                   <p className="text-[10px] text-slate-400 truncate">
-                    JPG, PNG, WebP — Ajustado en 16:9 sin franjas negras
+                    {(category === 'music' || notionAudioDetected)
+                      ? 'JPG, PNG, WebP — Ajustado en 1:1 cuadrado de álbum'
+                      : 'JPG, PNG, WebP — Ajustado en 16:9 sin franjas negras'}
                   </p>
                 </div>
                 <input
