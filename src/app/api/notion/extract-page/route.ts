@@ -157,23 +157,23 @@ function isAudioUrl(url: string): boolean {
   );
 }
 
-export async function POST(req: NextRequest) {
+export async function extractNotionMedia(url: string, options?: { refresh?: boolean; req?: NextRequest }) {
   try {
-    const body = await req.json();
-    const { url, refresh } = body;
+    const refresh = options?.refresh;
+    const req = options?.req;
 
     if (!url || typeof url !== 'string') {
-      return NextResponse.json({ error: 'Se requiere una URL de Notion' }, { status: 400 });
+      throw new Error('Se requiere una URL de Notion');
     }
 
-    const cacheKey = url.trim().toLowerCase();
-    const cached = extractCache.get(cacheKey);
-    const hasMedia = cached?.data?.foundVideo || cached?.data?.foundAudio;
-    if (!refresh && cached && hasMedia && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
-      return NextResponse.json(cached.data);
-    }
+  const cacheKey = url.trim().toLowerCase();
+  const cached = extractCache.get(cacheKey);
+  const hasMedia = cached?.data?.foundVideo || cached?.data?.foundAudio;
+  if (!refresh && cached && hasMedia && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+    return cached.data;
+  }
 
-    const { pageId, blockId, isDirectVideoUrl, isDirectAudioUrl } = extractNotionDetails(url);
+  const { pageId, blockId, isDirectVideoUrl, isDirectAudioUrl } = extractNotionDetails(url);
 
     // =========================================================================
     // CASO DIRECTO: La URL ya es un video directo de Notion / S3
@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
         audios: []
       };
       extractCache.set(cacheKey, { data: resData, timestamp: Date.now() });
-      return NextResponse.json(resData);
+      return resData;
     }
 
     // =========================================================================
@@ -250,7 +250,7 @@ export async function POST(req: NextRequest) {
         pageDescription: 'Audio extraído de Notion'
       };
       extractCache.set(cacheKey, { data: resData, timestamp: Date.now() });
-      return NextResponse.json(resData);
+      return resData;
     }
 
     let pageTitle = 'Página de Notion';
@@ -299,8 +299,8 @@ export async function POST(req: NextRequest) {
 
     // Check if logged in user has private Notion integration token
     let notionClient: any = null;
-    const cookieHeader = req.headers.get('cookie') || '';
-    if (cookieHeader.includes('infinity_session')) {
+    const cookieHeader = req ? (req.headers.get('cookie') || '') : '';
+    if (req && cookieHeader.includes('infinity_session')) {
       try {
         const { getSessionFromRequest } = await import('@/lib/auth/session');
         const session = getSessionFromRequest(req);
@@ -1328,10 +1328,26 @@ export async function POST(req: NextRequest) {
     } else {
       extractCache.delete(cacheKey);
     }
-    return NextResponse.json(resPayload);
+    return resPayload;
 
   } catch (error: any) {
-    console.error('Error extracting Notion video:', error);
+    console.error('Error extracting Notion media:', error);
+    throw error;
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { url, refresh } = body;
+
+    if (!url || typeof url !== 'string') {
+      return NextResponse.json({ error: 'Se requiere una URL de Notion' }, { status: 400 });
+    }
+
+    const result = await extractNotionMedia(url, { refresh, req });
+    return NextResponse.json(result);
+  } catch (error: any) {
     return NextResponse.json({
       error: error.message || 'Error al procesar la página de Notion'
     }, { status: 500 });

@@ -6,6 +6,7 @@ import { adapterRegistry } from '@/lib/adapters/registry';
 import { YouTubeAdapter } from '@/lib/adapters/youtube';
 import { VimeoAdapter } from '@/lib/adapters/vimeo';
 import { useItems } from '@/context/ItemsContext';
+import { isNotionUrlExpiredOrNearExpiry } from '@/lib/utils/notionUrl';
 import { drawCoverCrop, processUploadedThumbnail } from '@/lib/utils/videoThumbnail';
 import { canDownloadItem, downloadItem } from '@/lib/utils/download';
 import { 
@@ -145,34 +146,45 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
 
     if (!item) return;
 
-    // Only bind s3Url if it is actually a valid video stream, not an HTML page!
-    const savedS3IsStream = isValidDirectVideoStream(item.metadata?.s3Url);
-    if (item.metadata?.s3Url && savedS3IsStream) {
-      setExtractedVideo({
-        id: item.metadata.notionBlockId || 'saved_video',
-        url: item.metadata.s3Url,
-        title: item.name
-      });
-    }
-
-    // Trigger on-demand Notion video isolation if item is from Notion and doesn't have an isolated direct video stream yet
     const itemUrl = String(item.url || '');
     const isNotion = item.provider === 'notion' || 
                      itemUrl.includes('notion.so') || 
                      itemUrl.includes('notion.site') || 
                      itemUrl.includes('notion.com');
 
-    const hasIsolatedStream = Boolean(item.metadata?.s3Url && savedS3IsStream);
+    const s3Url = item.metadata?.s3Url;
+    const isExpired = isNotion && isNotionUrlExpiredOrNearExpiry(s3Url, item.metadata?.lastResolvedAt);
+    const savedS3IsStream = isValidDirectVideoStream(s3Url);
 
-    if (isNotion && !hasIsolatedStream) {
+    // Only bind s3Url if it is actually a valid video stream and NOT expired
+    if (s3Url && savedS3IsStream && !isExpired) {
+      setExtractedVideo({
+        id: item.metadata?.notionBlockId || 'saved_video',
+        url: s3Url,
+        title: item.name
+      });
+    }
+
+    const hasIsolatedStream = Boolean(s3Url && savedS3IsStream && !isExpired);
+
+    // Trigger on-demand Notion video isolation or renewal if stream missing or expired
+    if (isNotion && (!hasIsolatedStream || isExpired)) {
       setIsExtractingNotion(true);
+      const safetyTimer = setTimeout(() => {
+        setIsExtractingNotion(false);
+      }, 7000);
+
       fetch('/api/notion/extract-page', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: item.metadata?.originalUrl || item.url })
+        body: JSON.stringify({ 
+          url: item.metadata?.originalUrl || item.url,
+          refresh: true 
+        })
       })
         .then(r => r.json())
         .then(data => {
+          clearTimeout(safetyTimer);
           const vids = data.videos || (data.foundVideo && data.video ? [data.video] : []);
           setNotionVideos(vids);
           const playableVid = (data.foundVideo && data.video && isValidDirectVideoStream(data.video.url))
@@ -181,17 +193,17 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
 
           if (playableVid) {
             setExtractedVideo(playableVid);
+            // CRITICAL: NEVER overwrite user-modified title, custom thumbnail, or notes!
             editItem(item.id, {
               category: 'videos',
-              name: playableVid.title || item.name,
-              thumbnailUrl: playableVid.coverUrl || item.thumbnailUrl,
               metadata: {
                 ...item.metadata,
                 isNotionVideo: true,
                 s3Url: playableVid.url,
-                notionBlockId: playableVid.notionBlockId,
-                notionPageId: playableVid.notionPageId,
-                originalUrl: item.metadata?.originalUrl || item.url
+                notionBlockId: playableVid.notionBlockId || item.metadata?.notionBlockId,
+                notionPageId: playableVid.notionPageId || item.metadata?.notionPageId,
+                originalUrl: item.metadata?.originalUrl || item.url,
+                lastResolvedAt: Date.now()
               }
             }).catch(() => {});
           } else {
@@ -204,6 +216,7 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
           console.warn('Error on-demand extracting Notion video:', err);
         })
         .finally(() => {
+          clearTimeout(safetyTimer);
           setIsExtractingNotion(false);
         });
     }
@@ -539,20 +552,16 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
     : (baseSrc || '');
 
   const handleVideoError = () => {
-    if (corsRetryState === 'initial') {
-      // First retry: attempt proxied stream to acquire CORS headers and bypass mobile carrier restrictions
-      setCorsRetryState('proxy');
-    } else if (corsRetryState === 'proxy') {
-      // Second retry: fallback to direct play without CORS
-      setCorsRetryState('nocors');
-    } else {
-      if (isNotion && !isExtractingNotion) {
-        // Attempt fresh signed URL from Notion if previous signed URL expired
+    if (isNotion) {
+      if (!isExtractingNotion) {
         setIsExtractingNotion(true);
         fetch('/api/notion/extract-page', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: item.metadata?.originalUrl || item.url })
+          body: JSON.stringify({ 
+            url: item.metadata?.originalUrl || item.url,
+            refresh: true 
+          })
         })
           .then(r => r.json())
           .then(data => {
@@ -563,13 +572,29 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
             if (playableVid) {
               setExtractedVideo(playableVid);
               setCorsRetryState('initial');
+              editItem(item.id, {
+                metadata: {
+                  ...item.metadata,
+                  isNotionVideo: true,
+                  s3Url: playableVid.url,
+                  lastResolvedAt: Date.now()
+                }
+              }).catch(() => {});
             } else {
               setEmbedFailed(true);
             }
           })
           .catch(() => setEmbedFailed(true))
           .finally(() => setIsExtractingNotion(false));
-      } else if (!isNotion) {
+      }
+    } else {
+      if (corsRetryState === 'initial') {
+        // First retry: attempt proxied stream to acquire CORS headers
+        setCorsRetryState('proxy');
+      } else if (corsRetryState === 'proxy') {
+        // Second retry: fallback to direct play without CORS
+        setCorsRetryState('nocors');
+      } else {
         setEmbedFailed(true);
       }
     }
@@ -917,10 +942,29 @@ export function VideoViewer({ item, onClose, readOnly }: VideoViewerProps) {
           }`}
         >
           {isExtractingNotion ? (
-            <div className="flex flex-col items-center justify-center p-8 gap-3">
+            <div className="flex flex-col items-center justify-center p-8 gap-3 max-w-sm text-center">
               <div className="w-10 h-10 rounded-full border-2 border-blue-500/20 border-t-blue-500 animate-spin" />
-              <p className="text-slate-300 font-medium text-sm">Detectando video en Notion...</p>
-              <p className="text-slate-500 text-xs">Conectando con el contenido multimedia</p>
+              <p className="text-slate-300 font-medium text-sm">Conectando con video en Notion...</p>
+              <p className="text-slate-500 text-xs">Renovando enlace multimedia de forma segura</p>
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsExtractingNotion(false)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-medium transition-colors"
+                >
+                  Cancelar espera
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsExtractingNotion(false);
+                    setShowLinkVideoModal(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600/30 border border-blue-500/40 hover:bg-blue-600/50 text-blue-300 text-xs font-medium transition-colors"
+                >
+                  Vincular video
+                </button>
+              </div>
             </div>
           ) : isNotion && !hasPlayableNotionVideo ? (
             <div className="text-center p-5 sm:p-7 max-w-lg select-text max-h-[85vh] overflow-y-auto w-full">

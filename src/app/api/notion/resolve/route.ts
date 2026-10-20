@@ -3,6 +3,8 @@ import { Client } from '@notionhq/client';
 import { decryptSecret } from '@/lib/crypto/encryption';
 import { getSessionFromRequest } from '@/lib/auth/session';
 import { getServerUserSettings, fetchServerItems, updateServerItem, findServerItemById } from '@/lib/server/store';
+import { extractNotionMedia } from '../extract-page/route';
+import { isNotionUrlExpiredOrNearExpiry } from '@/lib/utils/notionUrl';
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,6 +13,8 @@ export async function GET(req: NextRequest) {
     const directBlockId = searchParams.get('blockId');
     const directUrl = searchParams.get('url');
     const directPageId = searchParams.get('pageId');
+    const forceRefresh = searchParams.get('refresh') === '1' || searchParams.get('refresh') === 'true';
+    const formatJson = searchParams.get('format') === 'json';
 
     if (!itemId && !directBlockId && !directUrl) {
       return NextResponse.json({ error: 'Parámetro itemId, blockId o url es requerido' }, { status: 400 });
@@ -32,6 +36,7 @@ export async function GET(req: NextRequest) {
     let targetUrl = item?.metadata?.s3Url || item?.url || directUrl || '';
     const blockId = item?.metadata?.notionBlockId || directBlockId;
     const pageId = item?.metadata?.notionPageId || directPageId;
+    const originalUrl = item?.metadata?.originalUrl || item?.url || directUrl || '';
 
     let freshUrl = targetUrl;
     let freshExpiry: string | undefined = undefined;
@@ -97,29 +102,81 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 3. Update item in background store if user is authorized and URL refreshed
-    if (userId && itemId && item && freshUrl !== item.url) {
-      try {
-        await updateServerItem(userId, itemId, {
-          url: freshUrl,
-          thumbnailUrl: item.category === 'photos' ? freshUrl : item.thumbnailUrl,
-          metadata: {
-            ...item.metadata,
-            expiryTime: freshExpiry,
-            lastResolvedAt: Date.now()
+    // 3. Fallback: Extract fresh media URL from page if still unrenewed, expired, or force-refreshed
+    const isUrlExpired = isNotionUrlExpiredOrNearExpiry(freshUrl, item?.metadata?.lastResolvedAt);
+    if ((freshUrl === targetUrl && (isUrlExpired || forceRefresh)) || (isUrlExpired && originalUrl)) {
+      if (originalUrl) {
+        try {
+          const extraction = await extractNotionMedia(originalUrl, { refresh: true });
+          const isAudio = item?.category === 'music' || item?.metadata?.isNotionAudio;
+          const isVideo = item?.category === 'videos' || item?.metadata?.isNotionVideo;
+
+          if (isVideo) {
+            const matchedVid = (extraction.videos || []).find((v: any) => blockId && v.notionBlockId === blockId) 
+              || extraction.video 
+              || extraction.videos?.[0];
+            if (matchedVid?.url) {
+              freshUrl = matchedVid.url;
+            }
+          } else if (isAudio) {
+            const matchedAud = (extraction.audios || []).find((a: any) => blockId && a.notionBlockId === blockId) 
+              || extraction.audio 
+              || extraction.audios?.[0];
+            if (matchedAud?.url) {
+              freshUrl = matchedAud.url;
+            }
+          } else {
+            // General or photo
+            if (extraction.video?.url) {
+              freshUrl = extraction.video.url;
+            } else if (extraction.audio?.url) {
+              freshUrl = extraction.audio.url;
+            } else if (extraction.coverUrl) {
+              freshUrl = extraction.coverUrl;
+            }
           }
-        });
+        } catch (extractErr) {
+          console.warn('Extraction fallback resolution error:', extractErr);
+        }
+      }
+    }
+
+    // 4. Update item in server store if valid user/item and URL was refreshed
+    // CRITICAL: NEVER overwrite user-modified title, thumbnail, lyrics, or metadata!
+    if (itemId && item && freshUrl) {
+      try {
+        const uId = userId || item.userId;
+        if (uId) {
+          await updateServerItem(uId, itemId, {
+            metadata: {
+              ...item.metadata,
+              s3Url: freshUrl,
+              expiryTime: freshExpiry || item.metadata?.expiryTime,
+              lastResolvedAt: Date.now()
+            }
+          });
+        }
       } catch (updateErr) {
         console.warn('Could not update stored item with fresh URL:', updateErr);
       }
     }
 
-    // 4. Redirect to the freshly signed URL
     const finalUrl = freshUrl || targetUrl;
     if (!finalUrl) {
       return NextResponse.json({ error: 'No se pudo resolver la URL del recurso de Notion' }, { status: 404 });
     }
 
+    // 5. JSON response mode (for client background auto-refresher and viewers)
+    if (formatJson) {
+      return NextResponse.json({
+        success: true,
+        url: finalUrl,
+        s3Url: freshUrl,
+        lastResolvedAt: Date.now()
+      });
+    }
+
+    // 6. Direct or proxy redirect for media streams
     try {
       new URL(finalUrl);
 

@@ -24,6 +24,7 @@ import {
   importUserData
 } from '@/lib/firebase/firestore';
 import { adapterRegistry } from '@/lib/adapters/registry';
+import { isNotionUrlExpiredOrNearExpiry } from '@/lib/utils/notionUrl';
 import { useAuth } from './AuthContext';
 
 interface ItemsContextType {
@@ -180,6 +181,91 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
       }));
     } catch {}
   }, [items, collections, user?.uid, loading, CACHE_KEY]);
+
+  // Periodic hourly check to refresh Notion S3 media links in background without touching user metadata
+  useEffect(() => {
+    if (!user || items.length === 0) return;
+
+    const checkAndRefreshNotionLinks = async () => {
+      // Find items that are Notion media and have expired or near-expiry S3 links
+      const expiredItems = items.filter(i => {
+        const isNotion = i.provider === 'notion' || 
+          String(i.url || '').includes('notion') || 
+          Boolean(i.metadata?.isNotionVideo) || 
+          Boolean(i.metadata?.isNotionAudio) ||
+          Boolean(i.metadata?.s3Url);
+        if (!isNotion) return false;
+        const s3Url = i.metadata?.s3Url || i.url;
+        return isNotionUrlExpiredOrNearExpiry(s3Url, i.metadata?.lastResolvedAt);
+      });
+
+      if (expiredItems.length === 0) return;
+
+      try {
+        const res = await fetch('/api/notion/refresh-links', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: expiredItems.map(i => ({
+              id: i.id,
+              url: i.url,
+              category: i.category,
+              metadata: i.metadata
+            }))
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+            const updatesMap = new Map<string, { s3Url: string; lastResolvedAt: number }>();
+            data.items.forEach((u: any) => updatesMap.set(u.id, u));
+
+            setItems(prevItems => prevItems.map(it => {
+              const update = updatesMap.get(it.id);
+              if (update) {
+                // Update Firestore asynchronously in background
+                updateItem(userId, it.id, {
+                  metadata: {
+                    ...it.metadata,
+                    s3Url: update.s3Url,
+                    lastResolvedAt: update.lastResolvedAt
+                  }
+                }).catch(() => {});
+
+                // Update state PRESERVING name, thumbnailUrl, and all user metadata!
+                return {
+                  ...it,
+                  metadata: {
+                    ...it.metadata,
+                    s3Url: update.s3Url,
+                    lastResolvedAt: update.lastResolvedAt
+                  }
+                };
+              }
+              return it;
+            }));
+          }
+        }
+      } catch (err) {
+        console.warn('Background Notion link refresh warning:', err);
+      }
+    };
+
+    // Run check 3 seconds after hydration, then every 30 minutes
+    const initialTimer = setTimeout(() => {
+      checkAndRefreshNotionLinks();
+    }, 3000);
+
+    const interval = setInterval(() => {
+      checkAndRefreshNotionLinks();
+    }, 30 * 60 * 1000);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [user?.uid, items.length]);
 
   const addItemByUrl = async (
     url: string, 

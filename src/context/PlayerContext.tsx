@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { InfinityItem } from '@/types';
 import { adapterRegistry } from '@/lib/adapters/registry';
+import { isNotionUrlExpiredOrNearExpiry } from '@/lib/utils/notionUrl';
 
 interface PlayerContextType {
   currentTrack: InfinityItem | null;
@@ -171,12 +172,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         };
 
         const targetStreamUrl = item.metadata?.s3Url || item.url;
-        // If Notion item lacks direct s3 audio stream, extract on-demand from page
-        if (isNotion && !isAudioFile(targetStreamUrl)) {
+        const isExpired = isNotion && isNotionUrlExpiredOrNearExpiry(targetStreamUrl, item.metadata?.lastResolvedAt);
+
+        // If Notion item lacks direct s3 audio stream or link is expired, extract fresh stream on-demand
+        if (isNotion && (!isAudioFile(targetStreamUrl) || isExpired)) {
           fetch('/api/notion/extract-page', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: item.metadata?.originalUrl || item.url })
+            body: JSON.stringify({ 
+              url: item.metadata?.originalUrl || item.url,
+              refresh: true
+            })
           })
             .then(r => r.json())
             .then(data => {
@@ -188,11 +194,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                 audio.play().then(() => setIsPlaying(true)).catch(() => {});
                 setCurrentTrack(prev => prev ? {
                   ...prev,
-                  thumbnailUrl: aud.coverUrl || prev.thumbnailUrl,
+                  // PRESERVE user custom thumbnailUrl! Only fallback to coverUrl if none was set
+                  thumbnailUrl: prev.thumbnailUrl || aud.coverUrl,
                   metadata: {
                     ...prev.metadata,
                     s3Url: aud.url,
-                    notionBlockId: aud.notionBlockId,
+                    lastResolvedAt: Date.now(),
+                    notionBlockId: aud.notionBlockId || prev.metadata?.notionBlockId,
                     isNotionAudio: true
                   }
                 } : null);
@@ -208,13 +216,46 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         audio.play().then(() => {
           setIsPlaying(true);
         }).catch(err => {
-          console.warn('Playback failed, trying proxy fallback:', err);
-          const rawUrl = item.metadata?.s3Url || item.url;
-          if (rawUrl && !audio.src.includes('/api/proxy/media')) {
-            audio.src = `/api/proxy/media?url=${encodeURIComponent(rawUrl)}`;
-            audio.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+          console.warn('Playback failed, trying recovery:', err);
+          if (isNotion) {
+            // Attempt fresh signed audio link on playback error
+            fetch('/api/notion/extract-page', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                url: item.metadata?.originalUrl || item.url,
+                refresh: true
+              })
+            })
+              .then(r => r.json())
+              .then(data => {
+                const aud = (data.foundAudio && data.audio) ? data.audio : (data.audios || [])[0];
+                if (aud?.url) {
+                  audio.src = `/api/proxy/media?url=${encodeURIComponent(aud.url)}`;
+                  audio.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+                  setCurrentTrack(prev => prev ? {
+                    ...prev,
+                    thumbnailUrl: prev.thumbnailUrl || aud.coverUrl,
+                    metadata: {
+                      ...prev.metadata,
+                      s3Url: aud.url,
+                      lastResolvedAt: Date.now(),
+                      isNotionAudio: true
+                    }
+                  } : null);
+                } else {
+                  setIsPlaying(false);
+                }
+              })
+              .catch(() => setIsPlaying(false));
           } else {
-            setIsPlaying(false);
+            const rawUrl = item.metadata?.s3Url || item.url;
+            if (rawUrl && !audio.src.includes('/api/proxy/media')) {
+              audio.src = `/api/proxy/media?url=${encodeURIComponent(rawUrl)}`;
+              audio.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+            } else {
+              setIsPlaying(false);
+            }
           }
         });
       }
