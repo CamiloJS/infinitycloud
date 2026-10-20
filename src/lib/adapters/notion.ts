@@ -27,7 +27,10 @@ export class NotionAdapter implements ProviderAdapter {
       if (
         (host.includes('notion') && host.includes('amazonaws.com')) ||
         host === 'file.notion.so' ||
-        host === 'prod-files-secure.s3.us-west-2.amazonaws.com'
+        host.includes('file.notion.so') ||
+        host.includes('prod-files-secure') ||
+        host.includes('notion-static.com') ||
+        (host.includes('amazonaws.com') && (urlString.includes('notion') || urlString.includes('table=block')))
       ) {
         return true;
       }
@@ -97,7 +100,7 @@ export class NotionAdapter implements ProviderAdapter {
         const res = await fetch('/api/notion/extract-page', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: urlString })
+          body: JSON.stringify({ url: urlString, refresh: true })
         });
         if (res.ok) {
           const data = await res.json();

@@ -16,7 +16,6 @@ import {
   Check, 
   AlertCircle,
   FileText,
-  RotateCcw,
   Music,
   ExternalLink
 } from 'lucide-react';
@@ -61,8 +60,6 @@ export function LiveLyricsModal({ isOpen, onClose }: LiveLyricsModalProps) {
   // Scroll ref and state
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const activeLineRef = useRef<HTMLDivElement | null>(null);
-  const [userScrolled, setUserScrolled] = useState<boolean>(false);
-  const userScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Editor mode state
   const [isEditing, setIsEditing] = useState<boolean>(false);
@@ -77,14 +74,9 @@ export function LiveLyricsModal({ isOpen, onClose }: LiveLyricsModalProps) {
     }
   }, [isEditing, rawLyrics]);
 
-  // Reset user scrolled state when song changes
+  // Smooth auto-scroll to active line automatically with playback
   useEffect(() => {
-    setUserScrolled(false);
-  }, [currentTrack?.id]);
-
-  // Smooth auto-scroll to active line
-  useEffect(() => {
-    if (userScrolled || !isOpen || isEditing) return;
+    if (!isOpen || isEditing) return;
 
     if (activeLineRef.current && scrollContainerRef.current) {
       activeLineRef.current.scrollIntoView({
@@ -92,32 +84,7 @@ export function LiveLyricsModal({ isOpen, onClose }: LiveLyricsModalProps) {
         block: 'center'
       });
     }
-  }, [activeIndex, userScrolled, isOpen, isEditing]);
-
-  // Detect user manual scrolling
-  const handleScroll = () => {
-    if (isEditing) return;
-    setUserScrolled(true);
-
-    if (userScrollTimeoutRef.current) {
-      clearTimeout(userScrollTimeoutRef.current);
-    }
-
-    // Auto-resume sync after 6 seconds of no user scrolling
-    userScrollTimeoutRef.current = setTimeout(() => {
-      setUserScrolled(false);
-    }, 6000);
-  };
-
-  const handleRecenter = () => {
-    setUserScrolled(false);
-    if (activeLineRef.current) {
-      activeLineRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center'
-      });
-    }
-  };
+  }, [activeIndex, isOpen, isEditing]);
 
   // Upload LRC file
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -162,7 +129,6 @@ export function LiveLyricsModal({ isOpen, onClose }: LiveLyricsModalProps) {
         }
       });
       setIsEditing(false);
-      setUserScrolled(false);
     } catch (err) {
       console.error('Error saving lyrics:', err);
       setFileError('No se pudo guardar la letra.');
@@ -265,19 +231,6 @@ export function LiveLyricsModal({ isOpen, onClose }: LiveLyricsModalProps) {
 
       {/* MAIN BODY AREA */}
       <div className="relative z-10 flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Recenter Floating Pill */}
-        {userScrolled && !isEditing && parsedLyrics.length > 0 && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 animate-in fade-in slide-in-from-top-3 duration-200">
-            <button
-              onClick={handleRecenter}
-              className="px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-xl flex items-center gap-2 transition-transform active:scale-95"
-            >
-              <RotateCcw size={14} />
-              <span>Sincronizar con la reproducción</span>
-            </button>
-          </div>
-        )}
-
         {isEditing ? (
           /* LRC EDITOR MODE */
           <div className="flex-1 flex flex-col p-4 sm:p-8 max-w-4xl mx-auto w-full min-h-0">
@@ -374,7 +327,6 @@ export function LiveLyricsModal({ isOpen, onClose }: LiveLyricsModalProps) {
           /* LIVE KARAOKE SCROLL CONTAINER */
           <div 
             ref={scrollContainerRef}
-            onScroll={handleScroll}
             className="flex-1 overflow-y-auto px-4 sm:px-12 py-32 space-y-8 text-center scroll-smooth no-scrollbar"
             style={{ scrollBehavior: 'smooth' }}
           >

@@ -82,14 +82,31 @@ export async function POST(req: NextRequest) {
         // keep defaultName
       }
 
+      // Automatically refine category based on filename and URL
+      const AUDIO_EXT_REGEX = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
+      const VIDEO_EXT_REGEX = /\.(mp4|mov|webm|m4v|ogv|mkv|avi)($|\?|&|#|\/|\s|"|'|`)/i;
+      const IMAGE_EXT_REGEX = /\.(jpg|jpeg|png|webp|gif|svg|bmp|avif|ico|tiff)($|\?|&|#|\/|\s|"|'|`)/i;
+
+      let finalCat: CategoryType = category;
+      const lowerName = name.toLowerCase();
+      const lowerUrl = url.toLowerCase();
+
+      if (AUDIO_EXT_REGEX.test(lowerName) || AUDIO_EXT_REGEX.test(lowerUrl)) {
+        finalCat = 'music';
+      } else if (VIDEO_EXT_REGEX.test(lowerName) || VIDEO_EXT_REGEX.test(lowerUrl)) {
+        finalCat = 'videos';
+      } else if (IMAGE_EXT_REGEX.test(lowerName) || IMAGE_EXT_REGEX.test(lowerUrl)) {
+        finalCat = 'photos';
+      }
+
       discoveredFiles.push({
         name,
         url,
-        category,
+        category: finalCat,
         notionBlockId: blockId,
         notionPageId: pageId,
         expiryTime,
-        thumbnailUrl: category === 'photos' ? url : undefined
+        thumbnailUrl: finalCat === 'photos' ? url : undefined
       });
     };
 

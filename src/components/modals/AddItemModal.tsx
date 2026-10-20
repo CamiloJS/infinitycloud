@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useItems } from '@/context/ItemsContext';
 import { adapterRegistry } from '@/lib/adapters/registry';
 import { CategoryType, ProviderType } from '@/types';
-import { X, Link2, Check, Sparkles, Loader2, CheckCircle2, Film, Play, Upload, Image as ImageIcon, Trash2, Music } from 'lucide-react';
+import { X, Link2, Check, Sparkles, Loader2, CheckCircle2, Film, Play, Upload, Image as ImageIcon, Trash2, Music, RefreshCw } from 'lucide-react';
 import { isValidDirectVideoStream } from '@/components/viewers/VideoViewer';
 import { processUploadedThumbnail } from '@/lib/utils/videoThumbnail';
 
@@ -88,6 +88,57 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
     }
   };
 
+  const scanNotionPage = (targetUrl: string) => {
+    if (!targetUrl || !targetUrl.startsWith('http')) return;
+    setIsSearchingNotionVideos(true);
+    fetch('/api/notion/extract-page', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: targetUrl, refresh: true })
+    })
+      .then(r => r.json())
+      .then(data => {
+        const vids = data.videos || (data.foundVideo && data.video ? [data.video] : []);
+        const auds = data.audios || (data.foundAudio && data.audio ? [data.audio] : []);
+        setNotionVideos(vids);
+        setNotionAudios(auds);
+
+        const AUDIO_REGEX = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
+        const urlIsAudio = AUDIO_REGEX.test(targetUrl);
+
+        if (auds.length > 0 && (urlIsAudio || vids.length === 0 || category === 'music')) {
+          setSelectedNotionAudio(auds[0]);
+          setNotionAudioDetected(true);
+          setCategory('music');
+          if (!name.trim() || name === 'Recurso de Notion' || name === 'Página de Notion' || name === 'Notion') {
+            setName(auds[0].title || data.pageTitle || 'Audio de Notion');
+          }
+        } else if (vids.length > 0) {
+          setSelectedNotionVideo(vids[0]);
+          setNotionVideoDetected(true);
+          setCategory('videos');
+          if (!name.trim() || name === 'Video de YouTube' || name.startsWith('Video (') || name === 'Recurso de Notion' || name === 'Página de Notion' || name === 'Notion') {
+            setName(vids[0].title || data.pageTitle || 'Video de Notion');
+          }
+        } else if (auds.length > 0) {
+          setSelectedNotionAudio(auds[0]);
+          setNotionAudioDetected(true);
+          setCategory('music');
+          if (!name.trim() || name === 'Recurso de Notion' || name === 'Página de Notion' || name === 'Notion') {
+            setName(auds[0].title || data.pageTitle || 'Audio de Notion');
+          }
+        } else {
+          setNotionVideoDetected(false);
+          setNotionAudioDetected(false);
+          if (data.pageTitle && (!name.trim() || name === 'Recurso de Notion' || name === 'Página de Notion')) {
+            setName(data.pageTitle);
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsSearchingNotionVideos(false));
+  };
+
   // Real-time detection when URL changes
   useEffect(() => {
     const trimmed = url.trim();
@@ -109,53 +160,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
         const isNotion = detected.provider === 'notion' || trimmed.includes('notion.so') || trimmed.includes('notion.site') || trimmed.includes('notion.com');
 
         if (isNotion) {
-          setIsSearchingNotionVideos(true);
-          fetch('/api/notion/extract-page', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: trimmed })
-          })
-            .then(r => r.json())
-            .then(data => {
-              const vids = data.videos || (data.foundVideo && data.video ? [data.video] : []);
-              const auds = data.audios || (data.foundAudio && data.audio ? [data.audio] : []);
-              setNotionVideos(vids);
-              setNotionAudios(auds);
-
-              const AUDIO_REGEX = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba|wma|aiff|m4b)($|\?|&|#|\/|\s|"|'|`)/i;
-              const urlIsAudio = AUDIO_REGEX.test(trimmed);
-
-              if (auds.length > 0 && (urlIsAudio || vids.length === 0 || category === 'music')) {
-                setSelectedNotionAudio(auds[0]);
-                setNotionAudioDetected(true);
-                setCategory('music');
-                if (!name.trim() || name === 'Recurso de Notion' || name === 'Página de Notion' || name === 'Notion') {
-                  setName(auds[0].title || data.pageTitle || 'Audio de Notion');
-                }
-              } else if (vids.length > 0) {
-                setSelectedNotionVideo(vids[0]);
-                setNotionVideoDetected(true);
-                setCategory('videos');
-                if (!name.trim() || name === 'Video de YouTube' || name.startsWith('Video (') || name === 'Recurso de Notion' || name === 'Página de Notion' || name === 'Notion') {
-                  setName(vids[0].title || data.pageTitle || 'Video de Notion');
-                }
-              } else if (auds.length > 0) {
-                setSelectedNotionAudio(auds[0]);
-                setNotionAudioDetected(true);
-                setCategory('music');
-                if (!name.trim() || name === 'Recurso de Notion' || name === 'Página de Notion' || name === 'Notion') {
-                  setName(auds[0].title || data.pageTitle || 'Audio de Notion');
-                }
-              } else {
-                setNotionVideoDetected(false);
-                setNotionAudioDetected(false);
-                if (data.pageTitle && (!name.trim() || name === 'Recurso de Notion' || name === 'Página de Notion')) {
-                  setName(data.pageTitle);
-                }
-              }
-            })
-            .catch(() => {})
-            .finally(() => setIsSearchingNotionVideos(false));
+          scanNotionPage(trimmed);
         } else {
           setNotionVideos([]);
           setSelectedNotionVideo(null);
@@ -339,12 +344,24 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                       Configuración multimedia de Notion
                     </span>
                   </div>
-                  {isSearchingNotionVideos && (
-                    <div className="flex items-center gap-1.5 text-[11px] text-blue-500">
-                      <Loader2 size={12} className="animate-spin" />
-                      <span>Buscando contenido...</span>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {isSearchingNotionVideos ? (
+                      <div className="flex items-center gap-1.5 text-[11px] text-blue-500">
+                        <Loader2 size={12} className="animate-spin" />
+                        <span>Buscando contenido...</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => scanNotionPage(url.trim())}
+                        className="px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-[11px] font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+                        title="Re-escanear página para detectar nuevos archivos subidos a Notion"
+                      >
+                        <RefreshCw size={11} />
+                        <span>Re-escanear</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* If multiple or single videos were found automatically in the page */}
