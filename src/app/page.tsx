@@ -12,6 +12,7 @@ import { ItemCard } from '@/components/explorer/ItemCard';
 import { ItemRow } from '@/components/explorer/ItemRow';
 import { FolderCard } from '@/components/explorer/FolderCard';
 import { FolderRow } from '@/components/explorer/FolderRow';
+import { GooglePhotosView } from '@/components/explorer/GooglePhotosView';
 import { EmptyState } from '@/components/explorer/EmptyState';
 import { LoginView } from '@/components/auth/LoginView';
 import { PhotoViewer } from '@/components/viewers/PhotoViewer';
@@ -49,6 +50,7 @@ export default function HomePage() {
     viewMode, 
     activeView, 
     activeCollectionId, 
+    activeCategory,
     collections, 
     emptyTrash,
     setActiveCollectionId,
@@ -302,7 +304,7 @@ export default function HomePage() {
           <CategoryCards />
 
           {/* Folders Section in Root Library View */}
-          {activeView === 'library' && !activeCollectionId && collections.length > 0 && (
+          {activeView === 'library' && !activeCollectionId && activeCategory === 'all' && collections.length > 0 && (
             <div className="mb-8 animate-in fade-in duration-200">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -376,7 +378,7 @@ export default function HomePage() {
           )}
 
           {/* Files Section Header (when folders are also shown) */}
-          {activeView === 'library' && !activeCollectionId && collections.length > 0 && filteredItems.length > 0 && (
+          {activeView === 'library' && !activeCollectionId && activeCategory === 'all' && collections.length > 0 && filteredItems.length > 0 && (
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -392,7 +394,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Main Grid or List View */}
+          {/* Main Grid or List View or Google Photos View */}
           {filteredItems.length === 0 ? (
             activeCollectionId ? (
               <div className="p-12 text-center rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 space-y-3">
@@ -430,6 +432,13 @@ export default function HomePage() {
                 onOpenNotionModal={() => setNotionModalOpen(true)}
               />
             )
+          ) : activeCategory === 'photos' && viewMode === 'grid' ? (
+            <GooglePhotosView
+              items={filteredItems}
+              onOpen={handleOpenItem}
+              onEdit={(it) => setEditingItem(it)}
+              onMove={(it) => setMovingItem(it)}
+            />
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredItems.map(item => (
