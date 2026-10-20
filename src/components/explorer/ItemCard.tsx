@@ -78,17 +78,6 @@ export function ItemCard({ item, onOpen, onEdit, onMove, readOnly }: ItemCardPro
     }
   };
 
-  const getProviderBadgeColor = () => {
-    switch (item.provider) {
-      case 'youtube': return 'bg-rose-500/10 text-rose-500 border-rose-500/20';
-      case 'drive': return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
-      case 'notion': return 'bg-slate-800/10 text-slate-800 dark:bg-white/10 dark:text-white border-slate-500/20';
-      case 'soundcloud': return 'bg-orange-500/10 text-orange-500 border-orange-500/20';
-      case 'vimeo': return 'bg-teal-500/10 text-teal-500 border-teal-500/20';
-      default: return 'bg-slate-500/10 text-slate-500 border-slate-500/20';
-    }
-  };
-
   return (
     <div
       onClick={() => onOpen(item)}
@@ -165,25 +154,23 @@ export function ItemCard({ item, onOpen, onEdit, onMove, readOnly }: ItemCardPro
       {/* Card Body */}
       <div className="p-3.5 flex-1 flex flex-col justify-between">
         <div>
-          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase tracking-wider ${getProviderBadgeColor()}`}>
-              {item.category === 'videos' || item.provider === 'youtube' ? 'video' : (item.category === 'music' && item.provider === 'direct' ? 'audio' : item.provider)}
-            </span>
+          {(item.isProtected || coll) && (
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+              {item.isProtected && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1" title="Protegido con contraseña">
+                  <Lock size={10} />
+                  <span>Bloqueado</span>
+                </span>
+              )}
 
-            {item.isProtected && (
-              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1" title="Protegido con contraseña">
-                <Lock size={10} />
-                <span>Bloqueado</span>
-              </span>
-            )}
-
-            {coll && (
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate max-w-[120px]">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: coll.color || '#8b5cf6' }} />
-                <span className="truncate">{coll.name}</span>
-              </span>
-            )}
-          </div>
+              {coll && (
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate max-w-[140px]">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: coll.color || '#8b5cf6' }} />
+                  <span className="truncate">{coll.name}</span>
+                </span>
+              )}
+            </div>
+          )}
 
           <h3 className="font-medium text-xs sm:text-sm text-slate-900 dark:text-white line-clamp-2 title-hover group-hover:text-blue-500 transition-colors" title={item.name}>
             {item.name}

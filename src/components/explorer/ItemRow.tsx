@@ -122,25 +122,21 @@ export function ItemRow({ item, onOpen, onEdit, onMove, readOnly }: ItemRowProps
             )}
           </div>
 
-          <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
-            <span className="uppercase text-[10px] font-semibold tracking-wider font-mono">
-              {item.category === 'videos' || item.provider === 'youtube' ? 'video' : (item.category === 'music' && item.provider === 'direct' ? 'audio' : item.provider)}
-            </span>
-            {item.isProtected && (
-              <span className="text-[10px] text-amber-500 flex items-center gap-0.5 font-semibold">
-                <Lock size={10} /> Protegido
-              </span>
-            )}
-            {coll && (
-              <>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: coll.color || '#8b5cf6' }} />
-                  {coll.name}
+          {(item.isProtected || coll) && (
+            <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
+              {item.isProtected && (
+                <span className="text-[10px] text-amber-500 flex items-center gap-0.5 font-semibold">
+                  <Lock size={10} /> Protegido
                 </span>
-              </>
-            )}
-          </div>
+              )}
+              {coll && (
+                <span className="flex items-center gap-1 text-[11px]">
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: coll.color || '#8b5cf6' }} />
+                  <span>{coll.name}</span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
