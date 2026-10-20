@@ -139,6 +139,29 @@ describe('Provider Adapters', () => {
     it('handles notion s3 media URLs', () => {
       expect(notion.canHandle('https://prod-files-secure.s3.us-west-2.amazonaws.com/abc/file.pdf')).toBe(true);
     });
+
+    it('detects direct Notion audio files as music category', async () => {
+      const audioUrl = 'https://file.notion.so/f/f/123/song.mp3';
+      expect(notion.canHandle(audioUrl)).toBe(true);
+      const detected = await notion.detect(audioUrl);
+      expect(detected.provider).toBe('notion');
+      expect(detected.category).toBe('music');
+      expect(detected.metadata?.isNotionAudio).toBe(true);
+    });
+
+    it('routes Notion audio through resolve endpoint', () => {
+      const item: any = {
+        id: 'item-audio-123',
+        url: 'https://camilojaimes.notion.site/song',
+        category: 'music',
+        metadata: {
+          isNotionAudio: true,
+          notionBlockId: 'block-123'
+        }
+      };
+      const directUrl = notion.getDirectUrl(item);
+      expect(directUrl).toBe('/api/notion/resolve?itemId=item-audio-123');
+    });
   });
 
   describe('AdapterRegistry', () => {

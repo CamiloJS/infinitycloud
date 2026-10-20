@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useItems } from '@/context/ItemsContext';
 import { adapterRegistry } from '@/lib/adapters/registry';
 import { CategoryType, ProviderType } from '@/types';
-import { X, Link2, Check, Sparkles, Loader2, CheckCircle2, Film, Play, Upload, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { X, Link2, Check, Sparkles, Loader2, CheckCircle2, Film, Play, Upload, Image as ImageIcon, Trash2, Music } from 'lucide-react';
 import { isValidDirectVideoStream } from '@/components/viewers/VideoViewer';
 import { processUploadedThumbnail } from '@/lib/utils/videoThumbnail';
 
@@ -25,6 +25,10 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
   const [notionVideos, setNotionVideos] = useState<any[]>([]);
   const [selectedNotionVideo, setSelectedNotionVideo] = useState<any | null>(null);
   const [directNotionVideoUrl, setDirectNotionVideoUrl] = useState<string>('');
+  const [notionAudioDetected, setNotionAudioDetected] = useState<boolean>(false);
+  const [notionAudios, setNotionAudios] = useState<any[]>([]);
+  const [selectedNotionAudio, setSelectedNotionAudio] = useState<any | null>(null);
+  const [directNotionAudioUrl, setDirectNotionAudioUrl] = useState<string>('');
   const [isSearchingNotionVideos, setIsSearchingNotionVideos] = useState<boolean>(false);
   const [userChangedCategory, setUserChangedCategory] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
@@ -45,6 +49,10 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       setNotionVideos([]);
       setSelectedNotionVideo(null);
       setDirectNotionVideoUrl('');
+      setNotionAudioDetected(false);
+      setNotionAudios([]);
+      setSelectedNotionAudio(null);
+      setDirectNotionAudioUrl('');
       setIsSearchingNotionVideos(false);
       setUserChangedCategory(false);
       setCustomThumbnailUrl('');
@@ -101,7 +109,10 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
             .then(r => r.json())
             .then(data => {
               const vids = data.videos || (data.foundVideo && data.video ? [data.video] : []);
+              const auds = data.audios || (data.foundAudio && data.audio ? [data.audio] : []);
               setNotionVideos(vids);
+              setNotionAudios(auds);
+
               if (vids.length > 0) {
                 setSelectedNotionVideo(vids[0]);
                 setNotionVideoDetected(true);
@@ -109,8 +120,16 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                 if (!name.trim() || name === 'Video de YouTube' || name.startsWith('Video (') || name === 'Recurso de Notion' || name === 'Página de Notion' || name === 'Notion') {
                   setName(vids[0].title || data.pageTitle || 'Video de Notion');
                 }
+              } else if (auds.length > 0) {
+                setSelectedNotionAudio(auds[0]);
+                setNotionAudioDetected(true);
+                setCategory('music');
+                if (!name.trim() || name === 'Recurso de Notion' || name === 'Página de Notion' || name === 'Notion') {
+                  setName(auds[0].title || data.pageTitle || 'Audio de Notion');
+                }
               } else {
                 setNotionVideoDetected(false);
+                setNotionAudioDetected(false);
                 if (data.pageTitle && (!name.trim() || name === 'Recurso de Notion' || name === 'Página de Notion')) {
                   setName(data.pageTitle);
                 }
@@ -121,14 +140,20 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
         } else {
           setNotionVideos([]);
           setSelectedNotionVideo(null);
+          setNotionAudios([]);
+          setSelectedNotionAudio(null);
           setIsSearchingNotionVideos(false);
         }
 
         if (detected.metadata?.isNotionVideo) {
           setNotionVideoDetected(true);
           setCategory('videos');
+        } else if (detected.metadata?.isNotionAudio) {
+          setNotionAudioDetected(true);
+          setCategory('music');
         } else if (!isNotion) {
           setNotionVideoDetected(false);
+          setNotionAudioDetected(false);
           if (!userChangedCategory) {
             setCategory(detected.category);
           }
@@ -164,7 +189,17 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
       const customMeta: Record<string, any> = {};
 
       if (isNotion) {
-        if (directNotionVideoUrl.trim()) {
+        if (directNotionAudioUrl.trim()) {
+          customMeta.s3Url = directNotionAudioUrl.trim();
+          customMeta.isNotionAudio = true;
+          customMeta.originalUrl = cleanUrl;
+        } else if (selectedNotionAudio && (!selectedNotionVideo || category === 'music')) {
+          customMeta.s3Url = selectedNotionAudio.url;
+          customMeta.isNotionAudio = true;
+          customMeta.notionBlockId = selectedNotionAudio.notionBlockId;
+          customMeta.notionPageId = selectedNotionAudio.notionPageId;
+          customMeta.originalUrl = cleanUrl;
+        } else if (directNotionVideoUrl.trim()) {
           customMeta.s3Url = directNotionVideoUrl.trim();
           customMeta.isNotionVideo = true;
           customMeta.originalUrl = cleanUrl;
@@ -183,11 +218,16 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
         customMeta.thumbnailUrl = customThumbnailUrl;
       }
 
-      const finalCat = (customMeta.isNotionVideo || notionVideoDetected) ? 'videos' : (userChangedCategory ? category : undefined);
+      let finalCat: CategoryType | undefined = userChangedCategory ? category : undefined;
+      if (customMeta.isNotionAudio || (notionAudioDetected && !notionVideoDetected)) {
+        finalCat = 'music';
+      } else if (customMeta.isNotionVideo || notionVideoDetected) {
+        finalCat = 'videos';
+      }
 
       await addItemByUrl(
         cleanUrl, 
-        name.trim() || selectedNotionVideo?.title || undefined, 
+        name.trim() || selectedNotionVideo?.title || selectedNotionAudio?.title || undefined, 
         finalCat, 
         collectionId || null,
         customMeta
@@ -261,13 +301,13 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                   <div className="flex items-center gap-2">
                     <Film size={15} className="text-blue-500" />
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                      Configuración de video de Notion
+                      Configuración multimedia de Notion
                     </span>
                   </div>
                   {isSearchingNotionVideos && (
                     <div className="flex items-center gap-1.5 text-[11px] text-blue-500">
                       <Loader2 size={12} className="animate-spin" />
-                      <span>Buscando videos...</span>
+                      <span>Buscando contenido...</span>
                     </div>
                   )}
                 </div>
@@ -290,6 +330,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                               setDirectNotionVideoUrl('');
                               setCategory('videos');
                               setNotionVideoDetected(true);
+                              setNotionAudioDetected(false);
                               if (vid.title) setName(vid.title);
                             }}
                             className={`w-full text-left p-2.5 rounded-lg border text-xs flex items-center justify-between transition-colors ${
@@ -304,6 +345,50 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                             </div>
                             {isSelected && (
                               <span className="shrink-0 text-[10px] uppercase font-bold bg-blue-500 text-white px-1.5 py-0.5 rounded">
+                                Seleccionado
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* If audios were found automatically in the page */}
+                {notionAudios.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
+                    <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                      <Music size={13} className="text-violet-500" />
+                      <span>Audios detectados ({notionAudios.length}) - Haz clic para elegir el que deseas reproducir:</span>
+                    </p>
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {notionAudios.map((aud, idx) => {
+                        const isSelected = selectedNotionAudio?.url === aud.url && !directNotionAudioUrl.trim();
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              setSelectedNotionAudio(aud);
+                              setDirectNotionAudioUrl('');
+                              setCategory('music');
+                              setNotionAudioDetected(true);
+                              setNotionVideoDetected(false);
+                              if (aud.title) setName(aud.title);
+                            }}
+                            className={`w-full text-left p-2.5 rounded-lg border text-xs flex items-center justify-between transition-colors ${
+                              isSelected
+                                ? 'bg-violet-500/10 border-violet-500/40 text-violet-600 dark:text-violet-300 font-semibold'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate pr-2">
+                              <Music size={13} className={isSelected ? 'text-violet-500 shrink-0' : 'text-slate-400 shrink-0'} />
+                              <span className="truncate">{aud.title || `Audio ${idx + 1}`}</span>
+                            </div>
+                            {isSelected && (
+                              <span className="shrink-0 text-[10px] uppercase font-bold bg-violet-500 text-white px-1.5 py-0.5 rounded">
                                 Seleccionado
                               </span>
                             )}
@@ -330,6 +415,7 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                       if (val.trim()) {
                         setCategory('videos');
                         setNotionVideoDetected(true);
+                        setNotionAudioDetected(false);
                         try {
                           const pathname = new URL(val).pathname;
                           const filename = decodeURIComponent(pathname.split('/').pop() || '');
@@ -343,14 +429,53 @@ export function AddItemModal({ isOpen, onClose }: AddItemModalProps) {
                     className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-blue-500 font-mono"
                   />
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                    💡 Copia el enlace del video desde Notion (haz clic en los 3 puntos del video &gt; &quot;Copiar enlace al bloque&quot; o &quot;Ver original&quot;) para aislarlo y reproducirlo directamente.
+                    💡 Copia el enlace del video o audio desde Notion (en los 3 puntos &gt; &quot;Copiar enlace al bloque&quot; o &quot;Ver original&quot;) para aislarlo y reproducirlo directamente.
                   </p>
+                </div>
+
+                {/* Option to paste direct audio stream (.mp3, .wav, .m4a) */}
+                <div className="pt-1">
+                  <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1.5">
+                    <Music size={12} className="text-violet-500" />
+                    <span>{notionAudios.length > 0 
+                      ? 'O si prefieres, pega el enlace directo del audio (.mp3, .wav, etc.):' 
+                      : 'Elegir / Vincular enlace directo del audio (.mp3, .wav, etc.):'}</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={directNotionAudioUrl}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDirectNotionAudioUrl(val);
+                      if (val.trim()) {
+                        setCategory('music');
+                        setNotionAudioDetected(true);
+                        setNotionVideoDetected(false);
+                        try {
+                          const pathname = new URL(val).pathname;
+                          const filename = decodeURIComponent(pathname.split('/').pop() || '');
+                          if (filename && (!name || name === 'Audio de Notion' || name === 'Recurso de Notion' || name === 'Página de Notion')) {
+                            setName(filename);
+                          }
+                        } catch {}
+                      }
+                    }}
+                    placeholder="https://... o enlace S3/mp3 del audio en Notion"
+                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-800 dark:text-white outline-none focus:border-violet-500 font-mono"
+                  />
                 </div>
 
                 {notionVideoDetected && (
                   <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[11px] flex items-center gap-2">
                     <CheckCircle2 size={14} className="shrink-0 text-emerald-500" />
                     <span>Video seleccionado. Se reproducirá con el reproductor nativo de Infinity.</span>
+                  </div>
+                )}
+
+                {notionAudioDetected && !notionVideoDetected && (
+                  <div className="p-2.5 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-600 dark:text-violet-400 text-[11px] flex items-center gap-2">
+                    <CheckCircle2 size={14} className="shrink-0 text-violet-500" />
+                    <span>Audio seleccionado. Se reproducirá con el reproductor de música de Infinity.</span>
                   </div>
                 )}
               </div>

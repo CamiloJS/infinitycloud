@@ -2,10 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const maxDuration = 30;
 
+// Server-side extraction cache (TTL 5 minutes)
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+const extractCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
 interface ExtractedNotionDetails {
   pageId: string | null;
   blockId: string | null;
   isDirectVideoUrl: boolean;
+  isDirectAudioUrl: boolean;
 }
 
 function extractNotionDetails(urlOrId: string): ExtractedNotionDetails {
@@ -27,9 +36,33 @@ function extractNotionDetails(urlOrId: string): ExtractedNotionDetails {
     lower.includes('.ogv?')
   );
 
+  const isAudioExt = isHttp && (
+    lower.endsWith('.mp3') ||
+    lower.endsWith('.wav') ||
+    lower.endsWith('.ogg') ||
+    lower.endsWith('.m4a') ||
+    lower.endsWith('.aac') ||
+    lower.endsWith('.flac') ||
+    lower.endsWith('.opus') ||
+    lower.endsWith('.weba') ||
+    lower.includes('.mp3?') ||
+    lower.includes('.wav?') ||
+    lower.includes('.ogg?') ||
+    lower.includes('.m4a?') ||
+    lower.includes('.aac?') ||
+    lower.includes('.flac?') ||
+    lower.includes('.opus?') ||
+    lower.includes('.weba?')
+  );
+
   const isDirectVideoUrl = isHttp && (isVideoExt || (
     (lower.includes('amazonaws.com') || lower.includes('file.notion.so')) &&
     (lower.includes('.mp4') || lower.includes('.mov') || lower.includes('.webm') || lower.includes('/video'))
+  ));
+
+  const isDirectAudioUrl = isHttp && (isAudioExt || (
+    (lower.includes('amazonaws.com') || lower.includes('file.notion.so')) &&
+    (lower.includes('.mp3') || lower.includes('.wav') || lower.includes('.ogg') || lower.includes('.m4a') || lower.includes('.aac') || lower.includes('.flac') || lower.includes('/audio'))
   ));
 
   let pageId: string | null = null;
@@ -84,7 +117,8 @@ function extractNotionDetails(urlOrId: string): ExtractedNotionDetails {
   return {
     pageId,
     blockId,
-    isDirectVideoUrl
+    isDirectVideoUrl,
+    isDirectAudioUrl
   };
 }
 
@@ -121,6 +155,35 @@ function isVideoUrl(url: string): boolean {
   );
 }
 
+function isAudioUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const clean = url.trim();
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) return false;
+  const l = clean.toLowerCase();
+  return (
+    l.includes('soundcloud.com/') ||
+    l.endsWith('.mp3') ||
+    l.endsWith('.wav') ||
+    l.endsWith('.ogg') ||
+    l.endsWith('.m4a') ||
+    l.endsWith('.aac') ||
+    l.endsWith('.flac') ||
+    l.endsWith('.opus') ||
+    l.endsWith('.weba') ||
+    l.includes('.mp3?') ||
+    l.includes('.wav?') ||
+    l.includes('.ogg?') ||
+    l.includes('.m4a?') ||
+    l.includes('.aac?') ||
+    l.includes('.flac?') ||
+    l.includes('.opus?') ||
+    l.includes('.weba?') ||
+    ((l.includes('amazonaws.com') || l.includes('file.notion.so')) && (
+      l.includes('.mp3') || l.includes('.wav') || l.includes('.ogg') || l.includes('.m4a') || l.includes('.aac') || l.includes('.flac') || l.includes('/audio')
+    ))
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -130,7 +193,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Se requiere una URL de Notion' }, { status: 400 });
     }
 
-    const { pageId, blockId, isDirectVideoUrl } = extractNotionDetails(url);
+    const cacheKey = url.trim().toLowerCase();
+    const cached = extractCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+      return NextResponse.json(cached.data);
+    }
+
+    const { pageId, blockId, isDirectVideoUrl, isDirectAudioUrl } = extractNotionDetails(url);
 
     // =========================================================================
     // CASO DIRECTO: La URL ya es un video directo de Notion / S3
@@ -157,18 +226,64 @@ export async function POST(req: NextRequest) {
         pageDescription: 'Video extraído de Notion'
       };
 
-      return NextResponse.json({
+      const resData = {
         success: true,
         foundVideo: true,
         video: vid,
-        videos: [vid]
-      });
+        videos: [vid],
+        foundAudio: false,
+        audio: null,
+        audios: []
+      };
+      extractCache.set(cacheKey, { data: resData, timestamp: Date.now() });
+      return NextResponse.json(resData);
+    }
+
+    // =========================================================================
+    // CASO DIRECTO: La URL ya es un audio directo de Notion / S3
+    // =========================================================================
+    if (isDirectAudioUrl) {
+      let title = 'Audio de Notion';
+      try {
+        const cleanName = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
+        if (cleanName && cleanName.length > 2) {
+          title = cleanName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+        }
+      } catch {
+        // fallback
+      }
+
+      const aud = {
+        id: 'direct_audio',
+        url,
+        title,
+        caption: title,
+        isExpiringS3: url.includes('amazonaws.com') || url.includes('notion.so'),
+        sourceType: 'notion_block',
+        pageTitle: title,
+        pageDescription: 'Audio extraído de Notion'
+      };
+
+      const resData = {
+        success: true,
+        foundVideo: false,
+        video: null,
+        videos: [],
+        foundAudio: true,
+        audio: aud,
+        audios: [aud],
+        pageTitle: title,
+        pageDescription: 'Audio extraído de Notion'
+      };
+      extractCache.set(cacheKey, { data: resData, timestamp: Date.now() });
+      return NextResponse.json(resData);
     }
 
     let pageTitle = 'Página de Notion';
     let pageDescription = '';
     let coverUrl: string | undefined = undefined;
     const extractedVideos: any[] = [];
+    const extractedAudios: any[] = [];
 
     function addExtractedVideo(v: any) {
       if (!v || !v.url) return;
@@ -183,6 +298,25 @@ export async function POST(req: NextRequest) {
           notionPageId: v.notionPageId,
           isExpiringS3: v.isExpiringS3,
           sourceType: v.sourceType || 'notion_block',
+          pageTitle,
+          pageDescription
+        });
+      }
+    }
+
+    function addExtractedAudio(a: any) {
+      if (!a || !a.url) return;
+      if (!extractedAudios.some(existing => existing.url === a.url)) {
+        extractedAudios.push({
+          id: a.id || `aud_${extractedAudios.length}_${Date.now()}`,
+          url: a.url,
+          title: a.title || pageTitle,
+          caption: a.caption || a.title || pageTitle,
+          coverUrl: a.coverUrl || coverUrl,
+          notionBlockId: a.notionBlockId,
+          notionPageId: a.notionPageId,
+          isExpiringS3: a.isExpiringS3,
+          sourceType: a.sourceType || 'notion_block',
           pageTitle,
           pageDescription
         });
@@ -269,6 +403,27 @@ export async function POST(req: NextRequest) {
                   pageDescription
                 };
               }
+            } else if (block.type === 'audio') {
+              const audioContent = block.audio;
+              const audioUrl = audioContent?.file?.url || audioContent?.external?.url;
+              const caption = audioContent?.caption?.[0]?.plain_text || pageTitle;
+              const isS3 = Boolean(audioContent?.file?.url);
+
+              if (audioUrl) {
+                addExtractedAudio({
+                  url: audioUrl,
+                  title: caption || pageTitle,
+                  caption,
+                  coverUrl: coverUrl || undefined,
+                  notionBlockId: block.id,
+                  notionPageId: formattedId,
+                  isExpiringS3: isS3,
+                  expiryTime: audioContent?.file?.expiry_time,
+                  sourceType: isS3 ? 'notion_block' : 'embed',
+                  pageTitle,
+                  pageDescription
+                });
+              }
             } else if (block.type === 'embed' && block.embed?.url && isVideoUrl(block.embed.url)) {
               return {
                 url: block.embed.url,
@@ -282,6 +437,19 @@ export async function POST(req: NextRequest) {
                 pageTitle,
                 pageDescription
               };
+            } else if (block.type === 'embed' && block.embed?.url && isAudioUrl(block.embed.url)) {
+              addExtractedAudio({
+                url: block.embed.url,
+                title: pageTitle,
+                caption: pageTitle,
+                coverUrl: coverUrl || undefined,
+                notionBlockId: block.id,
+                notionPageId: formattedId,
+                isExpiringS3: false,
+                sourceType: 'embed',
+                pageTitle,
+                pageDescription
+              });
             } else if (block.type === 'file') {
               const fileContent = block.file;
               const fileUrl = fileContent?.file?.url || fileContent?.external?.url;
@@ -299,6 +467,20 @@ export async function POST(req: NextRequest) {
                   pageTitle,
                   pageDescription
                 };
+              } else if (fileUrl && isAudioUrl(fileUrl)) {
+                addExtractedAudio({
+                  url: fileUrl,
+                  title: fileContent?.caption?.[0]?.plain_text || pageTitle,
+                  caption: fileContent?.caption?.[0]?.plain_text || pageTitle,
+                  coverUrl: coverUrl || undefined,
+                  notionBlockId: block.id,
+                  notionPageId: formattedId,
+                  isExpiringS3: Boolean(fileContent?.file?.url),
+                  expiryTime: fileContent?.file?.expiry_time,
+                  sourceType: 'notion_block',
+                  pageTitle,
+                  pageDescription
+                });
               }
             }
 
@@ -451,6 +633,107 @@ export async function POST(req: NextRequest) {
                 addExtractedVideo({
                   id: bId,
                   url: finalVideoUrl,
+                  title: blockTitle,
+                  caption: blockTitle,
+                  coverUrl: coverUrl || undefined,
+                  notionBlockId: bId,
+                  notionPageId: formattedId,
+                  isExpiringS3: isS3,
+                  sourceType: isS3 ? 'notion_block' : 'embed',
+                  pageTitle,
+                  pageDescription
+                });
+              }
+            }
+
+            // Check for audio in this block
+            const isAudioBlock = val.type === 'audio';
+            const isFileWithAudio = val.type === 'file' && (
+              val.properties?.source?.[0]?.[0]?.match(/\.(mp3|wav|ogg|m4a|aac|flac|opus|weba)(\?.*)?$/i)
+            );
+            const isEmbedWithAudio = (val.type === 'embed' || val.type === 'bookmark') && (
+              isAudioUrl(val.properties?.source?.[0]?.[0] || val.format?.display_source || '')
+            );
+
+            let propAudioUrl: string | null = null;
+            if (val.properties) {
+              for (const pVal of Object.values(val.properties) as any[]) {
+                if (Array.isArray(pVal)) {
+                  for (const seg of pVal) {
+                    if (Array.isArray(seg)) {
+                      if (typeof seg[0] === 'string' && isAudioUrl(seg[0])) {
+                        propAudioUrl = seg[0];
+                        break;
+                      }
+                      if (Array.isArray(seg[1])) {
+                        for (const sub of seg[1]) {
+                          if (Array.isArray(sub) && sub[0] === 'a' && typeof sub[1] === 'string' && isAudioUrl(sub[1])) {
+                            propAudioUrl = sub[1];
+                            break;
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                if (propAudioUrl) break;
+              }
+            }
+
+            if (isAudioBlock || isFileWithAudio || isEmbedWithAudio || propAudioUrl) {
+              const blockSource = val.properties?.source?.[0]?.[0];
+              const displaySource = val.format?.display_source;
+              let rawSource = (blockSource && isAudioUrl(blockSource))
+                ? blockSource
+                : (displaySource && isAudioUrl(displaySource)
+                  ? displaySource
+                  : (propAudioUrl || (blockSource && typeof blockSource === 'string' && blockSource.startsWith('http') ? blockSource : displaySource)));
+
+              const rawTitle = val.properties?.title?.[0]?.[0];
+              const rawCaption = val.properties?.caption?.[0]?.[0];
+              const blockTitle = (rawTitle && typeof rawTitle === 'string' && !rawTitle.startsWith('http') ? rawTitle : null) ||
+                                 (rawCaption && typeof rawCaption === 'string' && !rawCaption.startsWith('http') ? rawCaption : null) ||
+                                 pageTitle;
+
+              let finalAudioUrl = rawSource;
+              const isS3 = Boolean(rawSource && (rawSource.includes('amazonaws.com') || rawSource.includes('notion.so')));
+
+              if (isS3 && rawSource) {
+                try {
+                  const formattedBlockId = formatNotionUuid(bId);
+                  const signRes = await fetch('https://www.notion.so/api/v3/getSignedFileUrls', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    },
+                    signal: AbortSignal.timeout(4000),
+                    body: JSON.stringify({
+                      urls: [{
+                        url: rawSource,
+                        permissionRecord: {
+                          table: 'block',
+                          id: formattedBlockId
+                        }
+                      }]
+                    })
+                  });
+
+                  if (signRes.ok) {
+                    const signData = await signRes.json();
+                    if (signData?.signedUrls?.[0]) {
+                      finalAudioUrl = signData.signedUrls[0];
+                    }
+                  }
+                } catch (signErr) {
+                  console.warn('Could not sign S3 Audio URL via public API:', signErr);
+                }
+              }
+
+              if (finalAudioUrl && finalAudioUrl.startsWith('http')) {
+                addExtractedAudio({
+                  id: bId,
+                  url: finalAudioUrl,
                   title: blockTitle,
                   caption: blockTitle,
                   coverUrl: coverUrl || undefined,
@@ -731,6 +1014,62 @@ export async function POST(req: NextRequest) {
                   });
                 }
               }
+              const isAudio = val.type === 'audio' ||
+                (val.type === 'file' && val.properties?.source?.[0]?.[0]?.match(/\.(mp3|wav|ogg|m4a|aac|flac|opus|weba)/i)) ||
+                ((val.type === 'embed' || val.type === 'bookmark') && isAudioUrl(val.properties?.source?.[0]?.[0] || ''));
+
+              if (isAudio) {
+                const blockSrc = val.properties?.source?.[0]?.[0];
+                const displaySrc = val.format?.display_source;
+                let audioSrc = (blockSrc && isAudioUrl(blockSrc)) ? blockSrc : (displaySrc && isAudioUrl(displaySrc) ? displaySrc : null);
+                const rawTitle = val.properties?.title?.[0]?.[0];
+                const caption = (rawTitle && typeof rawTitle === 'string' && !rawTitle.startsWith('http') ? rawTitle : null) || 
+                                val.properties?.caption?.[0]?.[0] || 
+                                pageTitle;
+
+                if (audioSrc) {
+                  let finalSrc = audioSrc;
+                  const isS3 = audioSrc.includes('amazonaws.com') || audioSrc.includes('notion.so');
+                  if (isS3) {
+                    try {
+                      const signRes = await fetch('https://www.notion.so/api/v3/getSignedFileUrls', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        },
+                        signal: AbortSignal.timeout(3000),
+                        body: JSON.stringify({
+                          urls: [{
+                            url: audioSrc,
+                            permissionRecord: { table: 'block', id: formatNotionUuid(bId) }
+                          }]
+                        })
+                      });
+                      if (signRes.ok) {
+                        const signData = await signRes.json();
+                        if (signData?.signedUrls?.[0]) {
+                          finalSrc = signData.signedUrls[0];
+                        }
+                      }
+                    } catch {}
+                  }
+
+                  addExtractedAudio({
+                    id: bId,
+                    url: finalSrc,
+                    title: caption || pageTitle,
+                    caption,
+                    coverUrl: coverUrl || undefined,
+                    notionBlockId: bId,
+                    notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+                    isExpiringS3: isS3,
+                    sourceType: 'notion_block',
+                    pageTitle,
+                    pageDescription
+                  });
+                }
+              }
             }
           } catch {
             // ignore JSON parse error
@@ -754,7 +1093,24 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        // 5. Check for embedded YouTube / Vimeo in Notion page HTML
+        // 5. Check for direct S3 / Notion audio links in HTML
+        const s3AudioMatch = html.match(/https?:\/\/(?:prod-files-secure\.s3\.us-west-2\.amazonaws\.com|file\.notion\.so\/f\/f\/|s3(?:-|\.)us-west-2\.amazonaws\.com\/secure\.notion-static\.com)[^"'\s<>]+\.(?:mp3|wav|ogg|m4a|aac|flac|opus|weba)(?:\?[^"'\s<>]*)?/i);
+        if (s3AudioMatch && s3AudioMatch[0]) {
+          addExtractedAudio({
+            id: 'scrape_s3_audio',
+            url: s3AudioMatch[0],
+            title: pageTitle,
+            caption: pageTitle,
+            coverUrl,
+            notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+            isExpiringS3: true,
+            sourceType: 'notion_block',
+            pageTitle,
+            pageDescription
+          });
+        }
+
+        // 6. Check for embedded YouTube / Vimeo in Notion page HTML
         const ytMatch = html.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)[a-zA-Z0-9_-]{11}/i);
         if (ytMatch && ytMatch[0]) {
           addExtractedVideo({
@@ -787,7 +1143,7 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        // 6. Generic HTML video tags or direct MP4 match
+        // 7. Generic HTML video tags or direct MP4 match
         const genericVideoMatch = html.match(/<video[^>]+src=["']([^"']+)["']/i) ||
                                   html.match(/https?:\/\/[^"'\s<>]+\.(?:mp4|webm|mov|m4v)(?:\?[^"'\s<>]*)?/i);
 
@@ -806,23 +1162,49 @@ export async function POST(req: NextRequest) {
             pageDescription
           });
         }
+
+        // 8. Generic HTML audio tags or direct MP3/WAV/OGG/M4A match
+        const genericAudioMatch = html.match(/<audio[^>]+src=["']([^"']+)["']/i) ||
+                                  html.match(/https?:\/\/[^"'\s<>]+\.(?:mp3|wav|ogg|m4a|aac|flac|opus|weba)(?:\?[^"'\s<>]*)?/i);
+
+        if (genericAudioMatch) {
+          const audioUrl = genericAudioMatch[1] || genericAudioMatch[0];
+          addExtractedAudio({
+            id: 'scrape_generic_audio',
+            url: audioUrl,
+            title: pageTitle,
+            caption: pageTitle,
+            coverUrl,
+            notionPageId: pageId ? formatNotionUuid(pageId) : undefined,
+            isExpiringS3: audioUrl.includes('amazonaws.com') || audioUrl.includes('notion.so'),
+            sourceType: 'notion_block',
+            pageTitle,
+            pageDescription
+          });
+        }
       }
     } catch (scrapeErr) {
       console.warn('HTML scraping fallback error:', scrapeErr);
     }
 
-    // Return all extracted videos and page metadata
-    return NextResponse.json({
+    // Return all extracted media and page metadata
+    const resPayload = {
       success: true,
       foundVideo: extractedVideos.length > 0,
       video: extractedVideos[0] || null,
       videos: extractedVideos,
+      foundAudio: extractedAudios.length > 0,
+      audio: extractedAudios[0] || null,
+      audios: extractedAudios,
       pageTitle,
       pageDescription,
       coverUrl,
       publicSiteUrl,
       isNotionSite: Boolean(publicSiteUrl)
-    });
+    };
+
+    extractCache.set(cacheKey, { data: resPayload, timestamp: Date.now() });
+    return NextResponse.json(resPayload);
 
   } catch (error: any) {
     console.error('Error extracting Notion video:', error);

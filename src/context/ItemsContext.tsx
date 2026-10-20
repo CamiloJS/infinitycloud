@@ -108,6 +108,32 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const userId = user?.uid || 'guest';
+  const CACHE_KEY = `infinity_cache_data_${userId}`;
+
+  // Instant hydration from local cache
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!user) {
+      setItems([]);
+      setCollections([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (cached && Array.isArray(cached.items) && Array.isArray(cached.collections)) {
+          setItems(cached.items);
+          setCollections(cached.collections);
+          setLoading(false);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [user?.uid, CACHE_KEY]);
 
   const refreshData = async () => {
     if (!user) {
@@ -116,7 +142,8 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    // Only show full spinner if there is no cached data yet
+    setLoading(prev => (items.length === 0 ? true : prev));
     try {
       const [userItems, userColls] = await Promise.all([
         fetchUserItems(userId),
@@ -124,6 +151,13 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
       ]);
       setItems(userItems);
       setCollections(userColls);
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({
+          items: userItems,
+          collections: userColls,
+          updatedAt: Date.now()
+        }));
+      } catch {}
     } catch (err) {
       console.error('Error loading data:', err);
     } finally {
@@ -134,6 +168,18 @@ export function ItemsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     refreshData();
   }, [user?.uid]);
+
+  // Synchronize local cache whenever items or collections mutate
+  useEffect(() => {
+    if (typeof window === 'undefined' || !user || loading) return;
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        items,
+        collections,
+        updatedAt: Date.now()
+      }));
+    } catch {}
+  }, [items, collections, user?.uid, loading, CACHE_KEY]);
 
   const addItemByUrl = async (
     url: string, 

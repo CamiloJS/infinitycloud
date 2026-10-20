@@ -123,9 +123,9 @@ function SharedFolderContent() {
       setActivePhoto(item);
       return;
     }
-    if (item.category === 'music') {
+    if (item.category === 'music' || item.metadata?.isNotionAudio) {
       if (playTrack) {
-        const musicItems = (folderData?.items || []).filter(i => i.category === 'music');
+        const musicItems = (folderData?.items || []).filter(i => i.category === 'music' || i.metadata?.isNotionAudio);
         playTrack(item, musicItems);
       } else {
         window.open(item.url, '_blank');
@@ -169,10 +169,30 @@ function SharedFolderContent() {
             };
             setActiveVideo(videoItem);
             return;
+          } else if (data.foundAudio && data.audio) {
+            const audioItem: InfinityItem = {
+              ...item,
+              category: 'music',
+              name: data.audio.title || item.name,
+              thumbnailUrl: data.audio.coverUrl || item.thumbnailUrl,
+              metadata: {
+                ...item.metadata,
+                isNotionAudio: true,
+                s3Url: data.audio.url,
+                notionBlockId: data.audio.notionBlockId,
+                notionPageId: data.audio.notionPageId,
+                originalUrl: item.metadata?.originalUrl || item.url,
+                sourceType: data.audio.sourceType
+              }
+            };
+            if (playTrack) {
+              playTrack(audioItem);
+            }
+            return;
           }
         }
       } catch (err) {
-        console.warn('Error checking Notion video in shared folder:', err);
+        console.warn('Error checking Notion media in shared folder:', err);
       }
     }
 

@@ -107,11 +107,15 @@ export async function GET(req: NextRequest) {
     resHeaders.set('Accept-Ranges', acceptRanges);
     if (contentLength) resHeaders.set('Content-Length', contentLength);
     if (contentRange) resHeaders.set('Content-Range', contentRange);
-    resHeaders.set('Cache-Control', 'public, max-age=3600');
+    const etag = response.headers.get('etag');
+    if (etag) resHeaders.set('ETag', etag);
+    const lastModified = response.headers.get('last-modified');
+    if (lastModified) resHeaders.set('Last-Modified', lastModified);
+    resHeaders.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
     resHeaders.set('Access-Control-Allow-Origin', '*');
     resHeaders.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     resHeaders.set('Access-Control-Allow-Headers', 'Range, Content-Type, Authorization');
-    resHeaders.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Disposition');
+    resHeaders.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Disposition, ETag, Last-Modified');
 
     if (isDownload) {
       let downloadFilename = (filenameParam || 'archivo').replace(/["\r\n\\]/g, '_').trim();

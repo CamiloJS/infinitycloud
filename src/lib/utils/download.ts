@@ -89,7 +89,7 @@ export function getDownloadFilename(item: InfinityItem, resolvedUrl?: string): s
   if (item.category === 'photos') {
     return `${name}.jpg`;
   }
-  if (item.category === 'music') {
+  if (item.category === 'music' || item.metadata?.isNotionAudio) {
     return `${name}.mp3`;
   }
   if (item.category === 'documents') {
@@ -127,9 +127,12 @@ export async function downloadItem(item: InfinityItem): Promise<void> {
       });
       if (res.ok) {
         const data = await res.json();
-        const vid = data.video || (data.videos && data.videos[0]);
-        if (vid?.url) {
-          downloadUrl = vid.url;
+        const isAudio = item.category === 'music' || item.metadata?.isNotionAudio;
+        const media = isAudio 
+          ? (data.audio || (data.audios && data.audios[0])) 
+          : (data.video || (data.videos && data.videos[0]) || data.audio);
+        if (media?.url) {
+          downloadUrl = media.url;
         }
       }
     } catch (err) {

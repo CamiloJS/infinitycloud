@@ -137,7 +137,9 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      return NextResponse.redirect(finalUrl, { status: 307 });
+      const redirectResponse = NextResponse.redirect(finalUrl, { status: 307 });
+      redirectResponse.headers.set('Cache-Control', 'private, max-age=1800, stale-while-revalidate=3600');
+      return redirectResponse;
     } catch {
       return NextResponse.json({ error: 'URL resuelta no válida' }, { status: 400 });
     }

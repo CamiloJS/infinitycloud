@@ -63,6 +63,7 @@ export class NotionAdapter implements ProviderAdapter {
     const id = this.extractPageOrBlockId(urlString);
     let title = 'Recurso de Notion';
     let isVideo = false;
+    let isAudio = false;
 
     try {
       const url = new URL(urlString);
@@ -81,12 +82,23 @@ export class NotionAdapter implements ProviderAdapter {
         pathname.endsWith('.ogv')
       ) {
         isVideo = true;
+      } else if (
+        pathname.endsWith('.mp3') ||
+        pathname.endsWith('.wav') ||
+        pathname.endsWith('.ogg') ||
+        pathname.endsWith('.m4a') ||
+        pathname.endsWith('.aac') ||
+        pathname.endsWith('.flac') ||
+        pathname.endsWith('.opus') ||
+        pathname.endsWith('.weba')
+      ) {
+        isAudio = true;
       }
     } catch {
       // ignore
     }
 
-    // Client-side extraction: if it's a Notion page or Notion file, attempt to auto-extract video from page
+    // Client-side extraction: if it's a Notion page or Notion file, attempt to auto-extract video/audio from page
     if (typeof window !== 'undefined') {
       try {
         const res = await fetch('/api/notion/extract-page', {
@@ -114,6 +126,24 @@ export class NotionAdapter implements ProviderAdapter {
                 sourceType: data.video.sourceType
               }
             };
+          } else if (data.foundAudio && data.audio) {
+            return {
+              name: data.audio.title || title,
+              provider: 'notion',
+              category: 'music',
+              thumbnailUrl: data.audio.coverUrl || undefined,
+              metadata: {
+                notionId: id || undefined,
+                notionPageId: data.audio.notionPageId,
+                notionBlockId: data.audio.notionBlockId,
+                originalUrl: urlString,
+                extractedFromPage: true,
+                isNotionAudio: true,
+                s3Url: data.audio.url,
+                expiryTime: data.audio.expiryTime,
+                sourceType: data.audio.sourceType
+              }
+            };
           } else if (data.pageTitle) {
             title = data.pageTitle;
           }
@@ -123,14 +153,16 @@ export class NotionAdapter implements ProviderAdapter {
       }
     }
 
+    const finalCategory = isVideo ? 'videos' : (isAudio ? 'music' : 'documents');
     return {
       name: title,
       provider: 'notion',
-      category: isVideo ? 'videos' : 'documents',
+      category: finalCategory,
       metadata: {
         notionId: id || undefined,
         originalUrl: urlString,
-        isNotionVideo: isVideo
+        isNotionVideo: isVideo,
+        isNotionAudio: isAudio
       }
     };
   }
@@ -155,8 +187,11 @@ export class NotionAdapter implements ProviderAdapter {
 
   getDirectUrl(item: InfinityItem): string {
     // If it's a Notion hosted file with signed URL, route through secure refresh proxy
-    if (item.metadata?.notionBlockId || item.metadata?.notionPageId || item.metadata?.isNotionVideo) {
+    if (item.metadata?.notionBlockId || item.metadata?.notionPageId || item.metadata?.isNotionVideo || item.metadata?.isNotionAudio) {
       return `/api/notion/resolve?itemId=${encodeURIComponent(item.id)}`;
+    }
+    if (item.metadata?.s3Url) {
+      return item.metadata.s3Url;
     }
     return item.url;
   }

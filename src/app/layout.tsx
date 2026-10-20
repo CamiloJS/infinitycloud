@@ -5,6 +5,7 @@ import { AuthProvider } from '@/context/AuthContext';
 import { ItemsProvider } from '@/context/ItemsContext';
 import { PlayerProvider } from '@/context/PlayerContext';
 import { BottomPlayer } from '@/components/layout/BottomPlayer';
+import { AutoUpdateListener } from '@/components/common/AutoUpdateListener';
 
 export const metadata: Metadata = {
   title: 'Infinity — Repositorio Personal Multi-Plataforma',
@@ -59,6 +60,7 @@ export default function RootLayout({
           <AuthProvider>
             <ItemsProvider>
               <PlayerProvider>
+                <AutoUpdateListener />
                 {children}
                 <BottomPlayer />
               </PlayerProvider>

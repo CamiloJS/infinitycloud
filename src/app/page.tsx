@@ -107,8 +107,8 @@ export default function HomePage() {
       setActivePhoto(item);
       return;
     }
-    if (item.category === 'music') {
-      playTrack(item, filteredItems.filter(i => i.category === 'music'));
+    if (item.category === 'music' || item.metadata?.isNotionAudio) {
+      playTrack(item, filteredItems.filter(i => i.category === 'music' || i.metadata?.isNotionAudio));
       return;
     }
 
@@ -119,7 +119,7 @@ export default function HomePage() {
       itemUrl.includes('notion.site') ||
       itemUrl.includes('notion.com');
 
-    if (item.category === 'videos' || item.metadata?.isNotionVideo || isNotion) {
+    if (item.category === 'videos' || item.metadata?.isNotionVideo || (isNotion && !item.metadata?.isNotionAudio)) {
       setActiveVideo(item);
       return;
     }
